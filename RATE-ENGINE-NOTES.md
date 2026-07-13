@@ -39,7 +39,10 @@ Meal penalties: short or late lunch £23.38 day / £35.08 night.
 - SA, call 06:00 → wrap 18:00, Standard Day: adds 2×£17.54 early (£35.08) + £19.73 early travel
   → **£243.29** (day counts 11h from 07:00 → 4 OT blocks, NOT 12h)
 - Prototype grand totals with the demo schedule ("Full Schedule" source, default rates):
-  crowd mode **£574,342**; stunt mode **£261,270** (Main Unit only: £206,685).
+  crowd mode **£574,155**; stunt mode **£261,270** (Main Unit only: £206,685).
+  (Correction 2026-07-13: this originally said £574,342, but that figure was captured with a
+  stray day-calculator edit saved in the browser's localStorage — testing residue, not an
+  intended baseline. The clean prototype in a fresh browser shows £574,155; confirmed by Tyler.)
 
 ## Stunt engine (StuntOS)
 Performer £600/day, coordinator £1,000/day; + £17.50 holiday flat; + 55.5% usage on the day rate;

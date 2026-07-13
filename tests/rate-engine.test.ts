@@ -109,14 +109,12 @@ describe("Prototype grand totals — demo schedule, default rates", () => {
   m2U.castMap = Object.assign({}, mMain.castMap, m2U.castMap);
   const mAll = mergeModels(mMain, m2U);
 
-  // NOTE: RATE-ENGINE-NOTES.md quotes £574,342, but the prototype itself,
-  // opened in a clean browser (no saved day edits, default rates), shows
-  // £574,155 — verified live on 2026-07-13, exact value 574155.04. The £187
-  // difference is consistent with one saved day-calculator edit in the
-  // browser the notes figure was captured from (the prototype persists day
-  // edits in localStorage). Pending Tyler's confirmation this asserts the
-  // clean-prototype value; see also prototype-parity.test.ts, which pins
-  // every per-day cost.
+  // CONFIRMED BASELINE (Tyler, 2026-07-13): £574,155 — the clean-prototype
+  // value (exact 574155.04, verified against the prototype live in a fresh
+  // browser). The £574,342 originally quoted in RATE-ENGINE-NOTES.md was
+  // testing residue: a day-calculator edit saved in localStorage in the
+  // browser it was captured from. See also prototype-parity.test.ts, which
+  // pins every per-day cost.
   it("crowd mode grand total = £574,155 (Full Schedule, clean prototype)", () => {
     const crowd = computeCrowdCosts(mAll);
     expect(Math.round(crowd.grand)).toBe(574155);
