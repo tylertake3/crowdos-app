@@ -466,3 +466,9 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
   .raHazTable>div{border-right:none;border-bottom:1px solid #111}
   .raHazTable>div:last-child{border-bottom:none}
 }
+
+/* ---- CrowdOS additions below this line (prototype CSS above is verbatim) ---- */
+/* FIX: stick the controls bar below the topbar's REAL height — when the
+   topbar wraps to two rows the fixed 55px offset left the search box
+   underneath it and unclickable after scrolling */
+.controls{top:var(--topbarH,55px)}

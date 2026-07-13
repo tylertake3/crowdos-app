@@ -24,3 +24,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# local check-builds (keeps dev server cache intact)
+.next-check

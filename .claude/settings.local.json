@@ -20,7 +20,8 @@
       "Bash(git push *)",
       "Bash(grep -o \"Paul Kennington\\\\|Tilly Kennington\\\\|TILLY KENNINGTON\\\\|+44[0-9 ]*\\\\|07[0-9]\\\\{9\\\\}\\\\|[0-9]\\\\{5\\\\} [0-9]\\\\{6\\\\}\\\\|info@[a-z.]*\\\\|[a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]*\\\\.[a-z]\\\\{2,\\\\}\" lib/engine/demo/demo-fullfat.ts lib/engine/demo/demo-2ndunit.ts)",
       "Bash(/usr/bin/python3 /private/tmp/claude-501/-Users-tylerkennington-CROWDOS-APP/125de41b-487c-479b-8ab7-78ea6d4c655d/scratchpad/build_board.py)",
-      "Bash(/usr/bin/python3 -m http.server 8788 --bind 127.0.0.1 --directory /Users/tylerkennington/CROWDOS-APP)"
+      "Bash(/usr/bin/python3 -m http.server 8788 --bind 127.0.0.1 --directory /Users/tylerkennington/CROWDOS-APP)",
+      "Bash(/opt/homebrew/bin/npm pkg *)"
     ]
   }
 }
