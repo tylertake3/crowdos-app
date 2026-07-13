@@ -95,7 +95,22 @@ export function cdDayCost(
   return { cost, sa, featPD, spactPD, feats, spacts, saCost, featCost, spactCost };
 }
 
+// SA cost composition for a day — used by the views' hover tooltips.
+export interface SaComp {
+  rates: number;
+  hol: number;
+  ot: number;
+  early: number;
+  otPer: number;
+  earlyPer: number;
+  otDayB: number;
+  otNightB: number;
+  earlyBlocks: number;
+  earlyTravel: boolean;
+}
+
 export interface CrowdDayEntry extends DayCost {
+  saComp: SaComp;
   travel: { band: string; known: boolean; amt: number; total: number };
   chars: string;
   edited: boolean;
@@ -164,8 +179,21 @@ export function computeCrowdCosts(
       const tAmt =
         c.travel === "A" ? s.pact.travelA : c.travel === "B" ? s.pact.travelB : 0;
       const headsE = r.sa + r.featPD + r.spactPD;
+      const p = cdPerHead(c, "SA", s);
       entry = {
         ...r,
+        saComp: {
+          rates: r.sa * p.base,
+          hol: r.sa * p.hol,
+          ot: r.sa * p.ot,
+          early: r.sa * (p.earlyPay + p.earlyTravel),
+          otPer: p.ot,
+          earlyPer: p.earlyPay + p.earlyTravel,
+          otDayB: p.otDayB,
+          otNightB: p.otNightB,
+          earlyBlocks: p.earlyBlocks,
+          earlyTravel: p.earlyTravel > 0,
+        },
         chars: c.chars
           .map((x) => x.name + (x.count > 1 ? " ×" + x.count : ""))
           .join(", "),
@@ -183,6 +211,18 @@ export function computeCrowdCosts(
         sa, feats, spacts, featPD, spactPD,
         cost: saCost + featCost + spactCost + heads * tAmt,
         saCost, featCost, spactCost,
+        saComp: {
+          rates: sa * s.pact.sa,
+          hol: sa * s.pact.sa * s.pact.hol,
+          ot: 0,
+          early: 0,
+          otPer: 0,
+          earlyPer: 0,
+          otDayB: 0,
+          otNightB: 0,
+          earlyBlocks: 0,
+          earlyTravel: false,
+        },
         chars: "",
         travel: { band: lb.band, known: lb.known, amt: tAmt, total: heads * tAmt },
         edited: false,

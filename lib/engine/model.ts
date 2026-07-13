@@ -17,15 +17,16 @@ export function parseDayDate(d: Pick<ShootDay, "date">): Date | null {
   return null;
 }
 
-// Monday-of-week key, computed from local date parts so results do not
-// depend on the machine's timezone (the prototype used toISOString, which
-// shifts dates on non-UK machines).
+// Week key, verbatim from the prototype. NOTE: toISOString shifts the local
+// Monday back to the Sunday UTC date during British Summer Time, so week
+// labels render as e.g. "w/c 5 Jul" for the week starting Monday 6 Jul —
+// that is exactly what the prototype shows, so it is preserved (grouping is
+// unaffected). Tests pin behaviour by running with TZ=Europe/London.
 export function weekKey(date: Date): string {
   const d = new Date(date);
   const wd = (d.getDay() + 6) % 7;
   d.setDate(d.getDate() - wd);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return d.toISOString().slice(0, 10);
 }
 
 export const isPerf = (c: CastToken) =>

@@ -80,15 +80,32 @@ export interface StuntWeek {
   dayIds: string[];
 }
 
+export interface StuntAdjRow {
+  dayId: string;
+  label: string;
+  amt: number;
+}
+
 export interface StuntCosts {
   R: StuntSettings;
   perfBase: number;
   coordBase: number;
   perDay: Record<string, StuntPerDay>;
   perPerson: Record<string, StuntPerson>;
+  dayById: Record<string, ShootDay>;
   weeks: StuntWeek[];
+  adjRows: StuntAdjRow[];
   adjGrand: number;
   sdTotal: number;
+  // stunt dept coordinator summary, shaped exactly as the prototype's COST.sd
+  sd: {
+    on: boolean;
+    rate: number;
+    daysPerWk: number;
+    weekly: number;
+    total: number;
+    weekCount: number;
+  };
   grand: number;
 }
 
@@ -189,6 +206,7 @@ export function computeStuntCosts(
 
   // per-day stunt adjustments (fire burns, high falls, etc.)
   let adjGrand = 0;
+  const adjRows: StuntAdjRow[] = [];
   for (const d of model.days) {
     const items = adjustments[adjKey(d)] || [];
     if (!items.length) continue;
@@ -198,6 +216,7 @@ export function computeStuntCosts(
     pd.adjTotal = sum;
     pd.cost += sum;
     adjGrand += sum;
+    items.forEach((x) => adjRows.push({ dayId: d.id!, label: x.label, amt: +x.amt || 0 }));
     const wk = d._date ? weekKey(d._date) : "w?";
     const w = (weeks[wk] ||= { key: wk, days: 0, perfDays: 0, coordDays: 0, ins: 0, cost: 0, sdCoord: 0, dayIds: [] });
     if (!w.dayIds.includes(d.id!)) {
@@ -220,9 +239,18 @@ export function computeStuntCosts(
     Object.values(perPerson).reduce((a, p) => a + p.total, 0) + sdTotal + adjGrand;
 
   return {
-    R, perfBase, coordBase, perDay, perPerson,
+    R, perfBase, coordBase, perDay, perPerson, dayById,
     weeks: Object.values(weeks).sort((a, b) => a.key.localeCompare(b.key)),
-    adjGrand, sdTotal, grand,
+    adjRows, adjGrand, sdTotal,
+    sd: {
+      on: R.sdOn,
+      rate: R.sdRate,
+      daysPerWk: R.sdDays,
+      weekly: sdWeekly,
+      total: sdTotal,
+      weekCount: Object.keys(weeks).length,
+    },
+    grand,
   };
 }
 
