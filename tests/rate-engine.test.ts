@@ -57,6 +57,35 @@ describe("PACT/FAA 2026 — SA per-head", () => {
   });
 });
 
+describe("PACT/FAA 2026 — Featured tracks the SA rate exactly", () => {
+  it("Featured on a night shoot uses the £166.82 night BDR (prototype oversight, fixed)", () => {
+    const c = day({ shift: "Night", call: "18:00", wrap: "04:00" });
+    const p = cdPerHead(c, "Featured");
+    expect(p.base).toBe(166.82);
+    expect(round2(p.hol)).toBe(20.14); // 12.07% of the night base
+    expect(p.otNightB).toBe(p.otBlocks); // post-22:00 OT at night money
+  });
+
+  it("Featured on a public holiday uses the PH bases (£166.82 day / £250.22 night)", () => {
+    expect(cdPerHead(day({ ph: true }), "Featured").base).toBe(166.82);
+    expect(
+      cdPerHead(day({ ph: true, shift: "Night", call: "18:00", wrap: "04:00" }), "Featured").base
+    ).toBe(250.22);
+  });
+
+  it("Featured per-head equals SA per-head for any day config (no independent rate)", () => {
+    const configs = [
+      day(),
+      day({ shift: "Night", call: "18:00", wrap: "05:30" }),
+      day({ ph: true, call: "06:00", wrap: "19:00" }),
+      day({ fw: "cwd", call: "05:30", wrap: "18:45", travel: "B" }),
+    ];
+    for (const c of configs) {
+      expect(cdPerHead(c, "Featured").per).toBe(cdPerHead(c, "SA").per);
+    }
+  });
+});
+
 describe("Take 3 SPACT 2026 — per-head (separate card)", () => {
   it("07:00 → 18:00, SWD(10h) = £310.97 (£255 + £15.50 in lieu + 2×£11.69 OT + £17.09 travel)", () => {
     const p = cdPerHead(day(), "SPACT");

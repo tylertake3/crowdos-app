@@ -101,16 +101,16 @@ export function pactPerHead(
   const night = c.shift === "Night";
   const { call, wrap } = cdTimes(c);
 
-  const base =
-    tier === "SA"
-      ? c.ph
-        ? night
-          ? PACT.phNight
-          : PACT.phDay
-        : night
-          ? PACT.nightBDR
-          : s.sa
-      : s.sa; // Featured = SA BDR (prototype quirk: no night/PH base swap)
+  // Featured tracks the SA rate exactly — including the night (£166.82) and
+  // public-holiday (£250.22) base swaps. (The prototype skipped the swaps
+  // for Featured; confirmed as an oversight, fixed 2026-07-13.)
+  const base = c.ph
+    ? night
+      ? PACT.phNight
+      : PACT.phDay
+    : night
+      ? PACT.nightBDR
+      : s.sa;
   const hol = base * s.hol; // 12.07% on the day rate only
 
   const otDayInc = c.ph ? OTINC.phDay : s.otDay;
