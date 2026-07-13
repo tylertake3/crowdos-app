@@ -28,8 +28,21 @@ Built with Next.js + Supabase, deployed on Vercel.
 ## Project structure
 
 - `app/` — pages and layout (Next.js App Router)
+- `lib/engine/` — the rate engine (PACT/FAA 2026 and Take 3 SPACT 2026 kept
+  in separate modules), schedule parser, and demo data — covered by `npm test`
+- `lib/board/` — the board UI (ported from the validated prototype) and the
+  Supabase cloud-sync layer
+- `supabase/schema.sql` — database schema; run once in the Supabase SQL Editor
 - `lib/supabase.ts` — the shared Supabase client
 - `.env.local` — your secret keys (never committed to git)
+
+## Cloud persistence
+
+Signed out, the app runs on the demo schedule and keeps any work in the
+browser only. Signing in (email + password, top right) stores productions,
+manual shoot days, and day-calculator edits privately per account in
+Supabase, synced across devices. The built-in demo schedule and its edits
+always stay local.
 
 ## Roadmap
 
