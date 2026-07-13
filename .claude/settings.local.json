@@ -11,7 +11,9 @@
       "Bash(git init *)",
       "Bash(git remote *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'Scaffold Next.js + Supabase project *)"
+      "Bash(git commit -m 'Scaffold Next.js + Supabase project *)",
+      "Bash(/opt/homebrew/bin/brew install *)",
+      "Bash(git commit -m 'Add dev server launch config *)"
     ]
   }
 }
