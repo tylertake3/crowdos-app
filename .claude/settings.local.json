@@ -13,7 +13,11 @@
       "Bash(git add *)",
       "Bash(git commit -m 'Scaffold Next.js + Supabase project *)",
       "Bash(/opt/homebrew/bin/brew install *)",
-      "Bash(git commit -m 'Add dev server launch config *)"
+      "Bash(git commit -m 'Add dev server launch config *)",
+      "Bash(/usr/bin/python3 -m http.server 8788 --bind 127.0.0.1)",
+      "Bash(pkill -f \"http.server 8788\")",
+      "Bash(git commit -m 'Port rate engine from prototype with full validation suite *)",
+      "Bash(git push *)"
     ]
   }
 }
