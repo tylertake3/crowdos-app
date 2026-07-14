@@ -591,3 +591,23 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 .uploadrow{padding:8px 10px;color:var(--faint);font-size:11px;border:1px dashed var(--line2);border-radius:7px;margin:6px 0 2px;cursor:pointer}
 .uploadrow:hover{border-color:var(--hv-line);color:var(--hv)}
 .uploadrow.addunit{margin:8px 16px 12px}
+
+/* ---- inline per-scene crowd/stunt editor ---- */
+.reqcell.editable{cursor:pointer}
+.reqcell.editable:hover{background:var(--hover)}
+.reqcell.editable .dash{color:var(--hv);font-weight:700}
+.reqarea{grid-column:1/-1;padding:0}
+.reqedit{background:var(--panel2);border:1px solid var(--hv-line);border-radius:9px;padding:12px 14px;margin:4px 0 8px}
+.reqline{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.reqline label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);min-width:96px}
+.reqline input,.reqrow input{background:var(--panel);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:6px 8px;font-family:var(--mono);font-size:12px}
+.reqline input[type=number],.reqrow input[type=number]{width:70px}
+.reqhint{font-size:11px;color:var(--faint)}
+.reqsec{border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+.reqseclabel{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin-bottom:6px}
+.reqrow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.reqrow input[type=text],.reqrow input:not([type]){flex:1;min-width:120px}
+.reqrow button,.reqadd,.reqdone button{background:none;border:1px solid var(--line2);border-radius:6px;color:var(--sub);padding:5px 10px;font-size:11px;cursor:pointer}
+.reqadd{border-style:dashed;color:var(--hv);border-color:var(--hv-line)}
+.reqdone{margin-top:8px;text-align:right}
+.reqdone button{border-color:var(--hv-line);color:var(--hv);font-weight:600}

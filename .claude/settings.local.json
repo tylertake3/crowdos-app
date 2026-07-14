@@ -26,7 +26,9 @@
       "Bash(python3 -)",
       "Bash(cp \"/Users/tylerkennington/Downloads/Victura_Shooting_Full Fat Schedule_B&W_Block 5_26.05.11.pdf\" /Users/tylerkennington/CROWDOS-APP/public/t1.pdf)",
       "Bash(cp \"/Users/tylerkennington/Downloads/Emb_Full Fat Interim Shooting Schedule JC_SH_20_09_24.pdf\" /Users/tylerkennington/CROWDOS-APP/public/t2.pdf)",
-      "Bash(grep -nE \"^\\(Day|Night|Dawn|Dusk|Morning|Afternoon|Evening\\)\\\\b\\(\\\\s+[A-Z0-9]{1,6}\\)?\\(\\\\s+\\(\\\\d+\\\\s+\\)?\\\\d/8\\)?\\(\\\\s*pgs\\\\.?\\)?\\\\s*$\" extract_Emb_Full_Fat.txt)"
+      "Bash(grep -nE \"^\\(Day|Night|Dawn|Dusk|Morning|Afternoon|Evening\\)\\\\b\\(\\\\s+[A-Z0-9]{1,6}\\)?\\(\\\\s+\\(\\\\d+\\\\s+\\)?\\\\d/8\\)?\\(\\\\s*pgs\\\\.?\\)?\\\\s*$\" extract_Emb_Full_Fat.txt)",
+      "Bash(grep -n \"return {...MODEL,days};\\\\|^}\" /Users/tylerkennington/CROWDOS-APP/lib/board/app.js)",
+      "Bash(awk -F: '$1>2790 && $1<2820')"
     ]
   }
 }
