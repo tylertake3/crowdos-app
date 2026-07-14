@@ -25,7 +25,8 @@ create table if not exists prods (
   name text not null,
   colour text,
   rate_card jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (owner, name)
 );
 alter table prods enable row level security;
 drop policy if exists "own rows" on prods;

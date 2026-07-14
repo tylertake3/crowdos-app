@@ -533,3 +533,17 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 .fc-roster td input,.fc-roster td select{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:6px 8px;font-family:var(--mono);font-size:12px}
 .fc-roster td input[type=number]{width:64px}
 .fc-roster td input[type=text]{width:100%;min-width:130px}
+
+/* ---- sidebar: production groups ---- */
+.side-prod{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:12px 4px 3px}
+.side-prod-name{font-family:var(--cond);font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-prod-tools{display:flex;gap:6px;flex-shrink:0}
+.side-prod-tools span{cursor:pointer;color:var(--faint);font-size:12px;padding:0 2px}
+.side-prod-tools span:hover{color:var(--hv)}
+.side-item.sched{padding-left:16px;font-weight:500}
+.side-item .del{margin-left:auto;padding-left:6px}
+/* ---- dashboard: production group headers ---- */
+.dash-group{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dash-group-tools{display:flex;gap:12px;font-family:var(--body);font-size:10.5px;font-weight:600;letter-spacing:.02em;text-transform:none}
+.dash-group-tools span{cursor:pointer;color:var(--faint)}
+.dash-group-tools span:hover{color:var(--hv)}
