@@ -10,3 +10,8 @@
 alter table productions add column if not exists production text;
 alter table productions add column if not exists version text;
 alter table productions add column if not exists sched_date text;
+
+-- production settings: declared schedule format (auto / expanded / oneliner)
+-- and the production's own rate card ({name, vals}) applied when opened
+alter table productions add column if not exists format text;
+alter table productions add column if not exists rate_card jsonb;
