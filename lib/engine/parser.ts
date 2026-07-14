@@ -33,6 +33,7 @@ export function classifyToken(t: string): CastToken | null {
   const tok = t.trim();
   if (!tok) return null;
   if (/^ST$/i.test(tok)) return { code: "ST", type: "stuntCoord" };
+  if (/^SC$/i.test(tok)) return { code: "SC", type: "stuntCoord" };
   if (/^st\d+$/i.test(tok)) return { code: tok.toLowerCase(), type: "stuntPerf" };
   if (/^\d+sd$/i.test(tok)) return { code: tok.toLowerCase(), type: "stuntDbl" };
   if (/^\d+(cd|dd|d)$/i.test(tok)) return { code: tok.toLowerCase(), type: "double" };
@@ -223,6 +224,7 @@ const CATEGORIES = new Set([
   "Sound", "Music", "Mechanical Effects", "Greenery", "Electric",
   "Miscellaneous", "Optical FX", "Painting", "Construction", "Special FX",
   "Video", "Communications", "Stand Ins", "SA's", "SAs", "Supporting Artists",
+  "Stunts",
 ]);
 const SKIP_RX =
   /^(TILLY KENNINGTON|Registered Address|PICCADILLY \/\/|Printed on |\(Continued on next page\)|'CLOWN TOWN'|\*\*2ND UNIT\*\*|2U Director|Schedule Issued|Script Versions|rd$|th$|\d{2}-[A-Za-z]{3}-\d{4}$|\*+CONFIDENTIAL|©|Production Office:|This document is highly confidential|Therefore, please ensure|Dated:?$|FULL FAT|INTERIM SHOOTING SCHEDULE|SHOOTING$|Shooting Schedule$|SHOOT SCHED)/i;
@@ -237,10 +239,10 @@ const OL_LOC_RX =
 const OL_CAM_RX = /^-{2,}\s*(\d)\s*Cameras\s*-{2,}$/i;
 // Victura-style day banner: "DAY 1 - CALL 11:30 - 21:30 WRAP -SCWD - SR 05:17 / SS 20:43"
 const V_DAY_RX =
-  /^-{0,2}\s*DAY\s+(\d+)\s*[-–]\s*CALL\s*([\d:]+)\s*[-–]\s*([\d:]+)\s*WRAP\s*[-–]*\s*(CWD|SCWD|SWD|CWN)?/i;
-// Emb-style day line: "SHOOT DAY 1: MONDAY 23 SEPTEMBER 2024 | 08:00-17:00 CWD"
+  /^-{0,2}\s*DAY\s+(\d+)\s*[-–]\s*CALL\s*([\d:]+)\s*[-–]\s*([\d:]+)\s*WRAP\s*[-–]*\s*(CWD EARLY|CWD|SCWD|SWD|CWN)?/i;
+// Emb-style day line: "SHOOT DAY 2: TUESDAY 24 SEPTEMBER 2024 | 07:00-16:00 CWD EARLY"
 const EMB_DAY_RX =
-  /^SHOOT DAY\s+(\d+)\s*:\s*(.+?)(?:\s*\|\s*([\d:]+)\s*[-–]\s*([\d:]+)\s*(CWD|SCWD|SWD|CWN)?.*)?$/i;
+  /^SHOOT DAY\s+(\d+)\s*:\s*(.+?)(?:\s*\|\s*([\d:]+)\s*[-–]\s*([\d:]+)\s*(CWD EARLY|CWD|SCWD|SWD|CWN)?.*)?$/i;
 // Victura scene pair: an INT/EXT line first, then "Scene # 7.73A <description>"
 const IE_LINE_RX =
   /^(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\s+(Morning|Afternoon|Evening|Day|Night|Dawn|Dusk)\s+(.+)$/i;
@@ -486,6 +488,16 @@ export function parseExpanded(text: string): ScheduleModel {
       block = null; // the previous scene's category block is over
       continue;
     }
+    // an IE line without a set name gets it from the next ALL-CAPS line
+    // ("EXT Night 3/8" then "8 DUNKESWELL - AIRFIELD BENTWATERS")
+    if (pendingIE && !pendingIE.slug && /^\d*\s*[A-Z0-9 &/.,'()\-]{4,}$/.test(ln)) {
+      const mm = ln.match(/^(\d+[A-Z]?)\s+(.+)$/);
+      if (mm) {
+        pendingIE.scriptDay = pendingIE.scriptDay || mm[1];
+        pendingIE.slug = mm[2].trim();
+      } else pendingIE.slug = ln.trim();
+      continue;
+    }
     if (day && pendingIE && (m = ln.match(V_SCENE_RX))) {
       pushScene();
       scene = {
@@ -497,6 +509,7 @@ export function parseExpanded(text: string): ScheduleModel {
       };
       pendingIE = null;
       block = null;
+      if (!scene.slug) wantSlug = true; // set name may sit on the next line
       continue;
     }
 
@@ -521,13 +534,28 @@ export function parseExpanded(text: string): ScheduleModel {
 
     // block content
     if (block === "Cast Members") {
-      const cm = ln.match(/^(\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*|ST)\.\s*(.+)$/i);
+      const cm = ln.match(/^(\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*|ST|SC)\.\s*(.+)$/i);
       if (cm) {
         const tok = classifyToken(cm[1]);
         if (tok) {
+          // numbered cast whose NAME says stunt ("500. STUNT CO-ORD")
+          if (tok.type === "cast" && /\bSTUNT/i.test(cm[2]))
+            tok.type = /CO-?ORD/i.test(cm[2]) ? "stuntCoord" : "stuntPerf";
           scene.cast.push(tok);
           if (cm[2]) castMap[tok.code] = castMap[tok.code] || cm[2].trim();
         }
+      }
+      continue;
+    }
+    if (block === "Stunts") {
+      // "STUNT CO-ORDINATOR", "STUNT CO-ORDINATOR DART", "2 x stunt drivers"
+      const nx = ln.match(/^(\d+)\s*[xX]\s+(.+)$/);
+      if (nx) scene.extras!.push({ name: nx[2].trim(), count: +nx[1] });
+      else if (!/\d/.test(ln) && ln.length <= 48) {
+        // the coordinator often appears BOTH as an SC. cast line and in the
+        // Stunts block — don't count them twice
+        if (/CO-?ORD/i.test(ln) && scene.cast.some((c) => c.type === "stuntCoord")) continue;
+        scene.extras!.push({ name: ln.trim(), count: 1 });
       }
       continue;
     }
