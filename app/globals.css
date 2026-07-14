@@ -513,3 +513,23 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 .dash-new{border-style:dashed;background:none;color:var(--sub);display:flex;align-items:center;justify-content:center;min-height:130px;font-size:13px;font-weight:600}
 .dash-head{font-family:var(--cond);font-size:26px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:6px 0 2px}
 .dash-sub{color:var(--sub);font-size:12px}
+
+/* FIX: the input focus outline was clipped by .inwrap's overflow:hidden,
+   showing as a stray blue bar — highlight the wrapper instead */
+.rfield .inwrap input:focus-visible{outline:none}
+.rfield .inwrap:focus-within{border-color:var(--hv-line)}
+
+/* ---- dashboard v2 ---- */
+.dash-hero{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:6px 0 14px}
+.dash-card h3{font-size:18px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dash-card{position:relative;transition:border-color .12s, transform .12s}
+.dash-card:hover{transform:translateY(-1px)}
+.dash-edit{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--faint);font-size:12px;padding:4px;cursor:pointer;opacity:0;transition:opacity .1s}
+.dash-card:hover .dash-edit{opacity:1}
+.dash-edit:hover{color:var(--hv)}
+.dash-group{grid-column:1/-1;font-family:var(--cond);font-size:15px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sub);margin:8px 0 -4px}
+
+/* ---- calculator rough-budget roster ---- */
+.fc-roster td input,.fc-roster td select{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:6px 8px;font-family:var(--mono);font-size:12px}
+.fc-roster td input[type=number]{width:64px}
+.fc-roster td input[type=text]{width:100%;min-width:130px}
