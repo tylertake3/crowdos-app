@@ -249,7 +249,7 @@ const IE_LINE_RX =
   /^(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\s+(Morning|Afternoon|Evening|Day|Night|Dawn|Dusk)\s+(.+)$/i;
 const V_SCENE_RX = /^Scene\s*#\s*([\d][\d.\/]*[A-Za-z]?)\s*(.*)$/i;
 // Emb scene line: "310.25 INT 1/8 pgs LOC:" or "312.64pt2 INT THE PARK - THE HUB 2/8 pgs"
-const EMB_SCENE_RX = /^(\d+\.\d+(?:pt\d+|[A-Za-z])?)\s+(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\b\s*(.*)$/i;
+const EMB_SCENE_RX = /^(\d+\.\d+(?:\s*(?:pt\d+|[A-Za-z]))?)\s+(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\b\s*(.*)$/i;
 // Generic scene lines (DD/POP-style Full Fats): "Scene # 7 INT SLUG Day",
 // "Sc 3 EXT. BUS STOP (DFN) NIGHT FF1 2/8 pgs", or a bare "Sc 24" whose
 // INT/EXT line follows. Integer scene numbers, no "pgs." required.
@@ -325,6 +325,38 @@ interface PendingMeta {
   cams?: string;
 }
 
+// One-liner day delimiters that mark the END of a day with no start header:
+//   "End of DAY 1 Wednesday, 10 September 2025 3 5/8pgs"           (Project 12)
+//   "--- END OF DAY 7 -- Saturday, 28 March 2026 -- 4/8 pgs. ..."  (Victura draft)
+const END_OF_DAY_RX = /^-*\s*End of DAY\s+(\d+)\b(.*)$/i;
+// IE-leading one-liner scene, number optional:
+//   "EXT LONDON STADIUM - PITCH Day 4/29PT 1/8"          (TL3)
+//   "7 07 INT HALSTEAD MANOR - SITTING ROOM 29 1 7/8pgs 5, 6, 7 FE :"  (Project 12)
+//   "INT HALSTEAD MANOR - MAIN STAIRCASE 29 1/8pgs 5, 6 FE :"          (Project 12, no number)
+const OL_SCENE_RX =
+  /^(?:(\d+)\s+)?(?:(\d+[A-Za-z]?(?:pt\d+)?)\s+)?(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\b\s+(.+)$/i;
+
+const blankScene = (unit: string, strand: string): Scene => ({
+  num: "", part: "", ie: "", slug: "", tod: "", scriptDay: "", pages: "",
+  unit, desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
+  cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+  tags: strand ? [strand] : [],
+});
+
+// Pull a trailing comma-separated cast-number list ("… 5, 6, 7, 13") off the
+// tail of a line, returning the cast tokens and the line with them removed.
+function takeCastTail(s: string): { cast: CastToken[]; rest: string } {
+  const m = s.match(/\s((?:\d+[a-z]{0,3})(?:\s*,\s*\d+[a-z]{0,3})*)\s*$/i);
+  if (!m || !m[1].includes(",") && !/^\d+[a-z]{0,3}$/i.test(m[1].trim()))
+    return { cast: [], rest: s };
+  const cast: CastToken[] = [];
+  for (const t of m[1].split(",")) {
+    const c = classifyToken(t.trim());
+    if (c) cast.push(c);
+  }
+  return { cast, rest: s.slice(0, m.index).trim() };
+}
+
 // Category cells can merge with a neighbouring column during PDF text
 // extraction ("Cast Members Props") — match on the known prefix. Only
 // multi-word categories are prefix-matched: single words like "Security"
@@ -360,10 +392,21 @@ export function parseExpanded(text: string): ScheduleModel {
   // POP writes "Sc 24" alone — its INT/EXT line follows
   let genWaitIE = false;
 
+  // Only headerless one-liners (no "Shoot Day #" / "SHOOT DAY N:") open days
+  // implicitly on their first scene; header-based schedules must not.
+  const implicitDays =
+    !/^Shoot Day #/m.test(text) && !/^SHOOT DAY\s+\d+\s*:/m.test(text);
+  let implicitNum = 0;
   const pushScene = () => {
     if (scene && day) day.scenes.push(scene);
     scene = null;
     block = null;
+  };
+  // one-liners with no "Shoot Day #" header open a day implicitly on the
+  // first scene; the "End of DAY" line supplies its number and date
+  const ensureDay = () => {
+    if (day) return;
+    day = { num: ++implicitNum, date: "", sr: "", ss: "", loc: pendingSection || "", hours: "", type: "", cams: "", scenes: [], pages: "" };
   };
 
   for (const ln of lines) {
@@ -479,6 +522,22 @@ export function parseExpanded(text: string): ScheduleModel {
       if (day) { day.pages = (m[1] || "").trim(); days.push(day); day = null; }
       continue;
     }
+    // "End of DAY 1 Wednesday, 10 September 2025 …" — closes an implicitly
+    // opened day (one-liners with no start header), supplying num + date
+    if ((m = ln.match(END_OF_DAY_RX))) {
+      pushScene();
+      ensureDay();
+      if (day) {
+        day.num = +m[1];
+        const dm = (m[2] || "").match(/([A-Za-z]+day,?\s+\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})/);
+        if (dm) day.date = dm[1];
+        const pg = (m[2] || "").match(/((?:\d+\s+)?\d\/\d)\s*pgs?/i);
+        if (pg) day.pages = pg[1].trim();
+        days.push(day);
+        day = null;
+      }
+      continue;
+    }
     if ((m = ln.match(/^==\s*(.+?)\s*==$/))) {
       pendingSection = m[1].trim();
       if (day && !day.loc) day.loc = pendingSection;
@@ -525,14 +584,17 @@ export function parseExpanded(text: string): ScheduleModel {
       continue;
     }
     // Emb: scene number leads the line — "310.25 INT THE PARK - THE HUB 1 1/8 pgs"
-    if (day && (m = ln.match(EMB_SCENE_RX))) {
+    // (also one-liners like Victura draft "3.61B INT HARVARD", which open a
+    // day implicitly since they carry no "Shoot Day #" header)
+    if ((day || implicitDays) && (m = ln.match(EMB_SCENE_RX))) {
+      ensureDay();
       pushScene();
       let body = m[3].replace(/\bLOC\s*:.*$/i, "").trim();
       let pages = "";
       const pm = body.match(/((?:\d+\s+)?\d\/8|\d+)\s*(?:pgs\.?)?\s*$/);
       if (pm) { pages = pm[1].replace(/\s+/g, " "); body = body.slice(0, pm.index).trim(); }
       scene = {
-        num: m[1], part: "", ie: m[2].toUpperCase(), slug: body,
+        num: m[1].replace(/\s+/g, " "), part: "", ie: m[2].toUpperCase(), slug: body,
         tod: "", scriptDay: "", pages,
         unit: "Main", desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
         cast: [], extras: [], spacts: [], featured: [], vehNames: [],
@@ -600,6 +662,24 @@ export function parseExpanded(text: string): ScheduleModel {
       if (/^(INT|EXT|I\/E)/i.test(ln)) { applySceneHead(scene, ln); continue; }
     }
 
+    // IE-leading one-liner scene (TL3, Project 12) — number optional. Only
+    // fires when the line carries a page fraction, so full-fat prose/slug
+    // lines that merely start with INT/EXT can't be mistaken for scenes.
+    if ((day || implicitDays) && (m = ln.match(OL_SCENE_RX)) && /(?:\d+\s+)?\d\/\d/.test(m[4]) && !categoryOf(ln)) {
+      ensureDay();
+      pushScene();
+      const s = blankScene("Main", strand);
+      s.num = m[2] || (m[1] || "");
+      s.ie = m[3].toUpperCase().replace(/\./g, "").replace(/\s/g, "");
+      let rest = m[4].replace(/\bFE\s*:?\s*$/i, "").trim();
+      const tail = takeCastTail(rest); // trailing "5, 6, 7" cast numbers
+      if (tail.cast.length) { s.cast.push(...tail.cast); rest = tail.rest; }
+      applySceneHead(s, rest); // slug + tod + pages from what remains
+      scene = s;
+      block = null;
+      continue;
+    }
+
     if (scene && TAG_RX.test(ln)) {
       scene.tags.push(ln.replace(/^-+\s*|\s*-+$/g, ""));
       continue;
@@ -623,7 +703,17 @@ export function parseExpanded(text: string): ScheduleModel {
       applySceneHead(scene, ln);
       continue;
     }
-    if (scene && !scene.desc && !block) { scene.desc = ln; continue; }
+    if (scene && !scene.desc && !block) {
+      // one-liners often trail the scene's cast numbers on the description
+      // line ("…VFX PASS 5, 10, 11, 13"); lift a clear comma-list into cast
+      let d = ln;
+      if (!scene.cast.length) {
+        const t = takeCastTail(d);
+        if (t.cast.length >= 2) { scene.cast.push(...t.cast); d = t.rest; }
+      }
+      scene.desc = d;
+      continue;
+    }
     if (!scene || !block) continue;
 
     // block content
@@ -695,7 +785,11 @@ export function parseExpanded(text: string): ScheduleModel {
 }
 
 export function parseAny(text: string): ScheduleModel {
-  if (/^Shoot Day #/m.test(text) || /^SHOOT DAY\s+\d+\s*:/m.test(text))
+  if (
+    /^Shoot Day #/m.test(text) ||
+    /^SHOOT DAY\s+\d+\s*:/m.test(text) ||
+    /End of DAY\s+\d+/i.test(text) // one-liners delimited only by day-end lines
+  )
     return parseExpanded(text);
   return parseSchedule(text);
 }

@@ -93,6 +93,58 @@ describe("Victura-style Full Fat", () => {
   });
 });
 
+// One-liners: the day board must populate with SCENES even when crowd/stunts
+// aren't in the document (they're added by hand afterwards).
+const OL_ENDOFDAY = `Cast Members
+1. EDDIE
+7 07 INT HALSTEAD MANOR - SITTING ROOM 29 1 7/8pgs 5, 6, 7, 13 FE :
+Something happens in the sitting room
+INT HALSTEAD MANOR - STAIRCASE 29 1/8pgs 5, 6 FE :
+A quiet moment on the stairs
+End of DAY 1 Wednesday, 10 September 2025 3 5/8pgs
+EXT COURTYARD 29 2/8pgs 7 FE :
+Cars arrive
+End of DAY 2 Thursday, 11 September 2025 2/8pgs
+`;
+
+const OL_IE_LEADING = `Shoot Day # 1 Wednesday, 23 March 2022
+EXT LONDON STADIUM - PITCH Day 4/29 1/8
+Players walk out into the line up. 5, 10, 11, 13, 14
+EXT LONDON STADIUM - PITCH Day 4/32 1/8
+The teams kick off. 5, 11, 13
+End Day # 1 Wednesday, 23 March 2022 -- Total Pages: 1 5/8
+`;
+
+describe("One-liner: End-of-DAY delimited (no start header)", () => {
+  const m = parseAny(OL_ENDOFDAY);
+  it("builds days from End-of-DAY lines and populates their scenes", () => {
+    expect(m.days.length).toBe(2);
+    expect(m.days[0].num).toBe(1);
+    expect(m.days[0].date).toContain("10 September 2025");
+    expect(m.days[0].scenes.length).toBe(2);
+    expect(m.days[1].scenes.length).toBe(1);
+  });
+  it("reads scene IE, slug, pages and cast numbers", () => {
+    const s = m.days[0].scenes[0];
+    expect(s.ie).toBe("INT");
+    expect(s.slug).toContain("HALSTEAD MANOR - SITTING ROOM");
+    expect(s.pages).toBe("1 7/8");
+    expect(s.cast.map((c) => c.code)).toEqual(["5", "6", "7", "13"]);
+  });
+});
+
+describe("One-liner: IE-leading scenes (cast on the description line)", () => {
+  const m = parseAny(OL_IE_LEADING);
+  it("captures scenes with no scene number", () => {
+    expect(m.days.length).toBe(1);
+    expect(m.days[0].scenes.length).toBe(2);
+    const s = m.days[0].scenes[0];
+    expect(s.ie).toBe("EXT");
+    expect(s.slug).toContain("LONDON STADIUM - PITCH");
+    expect(s.cast.map((c) => c.code)).toEqual(["5", "10", "11", "13", "14"]);
+  });
+});
+
 describe("Emb-style Full Fat", () => {
   const m = parseAny(EMB_STYLE);
   it("finds SHOOT DAY lines with date, hours, and type", () => {
