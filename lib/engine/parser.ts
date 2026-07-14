@@ -222,10 +222,12 @@ const CATEGORIES = new Set([
   "Additional Labor", "Livestock", "Security", "Set Dressing", "Costumes",
   "Sound", "Music", "Mechanical Effects", "Greenery", "Electric",
   "Miscellaneous", "Optical FX", "Painting", "Construction", "Special FX",
-  "Video", "Communications", "Stand Ins",
+  "Video", "Communications", "Stand Ins", "SA's", "SAs", "Supporting Artists",
 ]);
 const SKIP_RX =
-  /^(TILLY KENNINGTON|Registered Address|PICCADILLY \/\/|Printed on |\(Continued on next page\)|'CLOWN TOWN'|\*\*2ND UNIT\*\*|2U Director|Schedule Issued|Script Versions|rd$|\d{2}-[A-Za-z]{3}-\d{4}$|\*+CONFIDENTIAL)/i;
+  /^(TILLY KENNINGTON|Registered Address|PICCADILLY \/\/|Printed on |\(Continued on next page\)|'CLOWN TOWN'|\*\*2ND UNIT\*\*|2U Director|Schedule Issued|Script Versions|rd$|th$|\d{2}-[A-Za-z]{3}-\d{4}$|\*+CONFIDENTIAL|©|Production Office:|This document is highly confidential|Therefore, please ensure|Dated:?$|FULL FAT|INTERIM SHOOTING SCHEDULE|SHOOTING$|Shooting Schedule$|SHOOT SCHED)/i;
+// page headers repeat on every page of real schedules — always noise
+const PAGE_RX = /Page\s*#?\s*:?\s*\d+\s*$/;
 const TAG_RX =
   /^(-{0,2}\s*)?(Move(?:\s+(?:Set|Downstairs|Upstairs))?|Set Move|Trolley Push\??|U Crane|Array|Low Loader|Pod|Green Screen|LOCATION MOVE|Travel (?:To|From) .+?)(\s*-{0,2})?$/i;
 const OL_DAY_RX =
@@ -233,6 +235,37 @@ const OL_DAY_RX =
 const OL_LOC_RX =
   /^-{2,}\s*(.+?)\s*-{1,}\s*(\d{3,4})\s*-\s*(\d{3,4})\s*(?:-{2,}\s*(CWD|CWN|SCWD))?/;
 const OL_CAM_RX = /^-{2,}\s*(\d)\s*Cameras\s*-{2,}$/i;
+// Victura-style day banner: "DAY 1 - CALL 11:30 - 21:30 WRAP -SCWD - SR 05:17 / SS 20:43"
+const V_DAY_RX =
+  /^-{0,2}\s*DAY\s+(\d+)\s*[-–]\s*CALL\s*([\d:]+)\s*[-–]\s*([\d:]+)\s*WRAP\s*[-–]*\s*(CWD|SCWD|SWD|CWN)?/i;
+// Emb-style day line: "SHOOT DAY 1: MONDAY 23 SEPTEMBER 2024 | 08:00-17:00 CWD"
+const EMB_DAY_RX =
+  /^SHOOT DAY\s+(\d+)\s*:\s*(.+?)(?:\s*\|\s*([\d:]+)\s*[-–]\s*([\d:]+)\s*(CWD|SCWD|SWD|CWN)?.*)?$/i;
+// Victura scene pair: an INT/EXT line first, then "Scene # 7.73A <description>"
+const IE_LINE_RX =
+  /^(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\s+(Morning|Afternoon|Evening|Day|Night|Dawn|Dusk)\s+(.+)$/i;
+const V_SCENE_RX = /^Scene\s*#\s*([\d][\d.\/]*[A-Za-z]?)\s*(.*)$/i;
+// Emb scene line: "310.25 INT 1/8 pgs LOC:" or "312.64pt2 INT THE PARK - THE HUB 2/8 pgs"
+const EMB_SCENE_RX = /^(\d+\.\d+(?:pt\d+|[A-Za-z])?)\s+(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\b\s*(.*)$/i;
+
+// People-block entries arrive in several shapes; junk (page headers, merged
+// vehicle columns) must not become phantom artists. A bare name is only
+// accepted if it has no digits and at least one lowercase letter.
+function pushCrowdEntry(list: NamedCount[], ln: string): void {
+  const pc = ln.match(/\((\d+)\)\s*$/);
+  if (pc) { list.push(parenCount(ln)); return; }
+  const sq = ln.match(/^(.+?)\s*\[(\d+)\]$/);
+  if (sq) { list.push({ name: sq[1].trim(), count: +sq[2] }); return; }
+  const nx = ln.match(/^(\d+)\s*[xX]\s+(.+)$/);
+  if (nx) {
+    // a merged neighbouring column can append e.g. "3 x Military cars" —
+    // keep only the first entry's name
+    const name = nx[2].split(/\s+\d+\s*[xX]\s/)[0].trim();
+    list.push({ name, count: +nx[1] });
+    return;
+  }
+  if (!/\d/.test(ln) && /[a-z]/.test(ln) && ln.length <= 40) list.push({ name: ln.trim(), count: 1 });
+}
 
 function parenCount(str: string): NamedCount {
   const m = str.match(/\((\d+)\)\s*$/);
@@ -250,12 +283,23 @@ interface PendingMeta {
   cams?: string;
 }
 
+// Category cells can merge with a neighbouring column during PDF text
+// extraction ("Cast Members Props") — match on the known prefix. Only
+// multi-word categories are prefix-matched: single words like "Security"
+// would swallow real content ("Security Guard" is a featured artist).
+function categoryOf(ln: string): string | null {
+  if (CATEGORIES.has(ln)) return ln;
+  for (const c of CATEGORIES)
+    if (c.includes(" ") && ln.startsWith(c + " ")) return c;
+  return null;
+}
+
 export function parseExpanded(text: string): ScheduleModel {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
-    .filter((l) => !SKIP_RX.test(l));
+    .filter((l) => !SKIP_RX.test(l) && !PAGE_RX.test(l));
   const days: ShootDay[] = [];
   const notes: ScheduleNote[] = [];
   const castMap: Record<string, string> = {};
@@ -267,6 +311,10 @@ export function parseExpanded(text: string): ScheduleModel {
   let pendingSection = "";
   const seenDays = new Set<number>();
   let skipDupe = false;
+  // Victura writes the INT/EXT line before its "Scene #" line — stash it
+  let pendingIE: { ie: string; tod: string; slug: string; pages: string; scriptDay: string } | null = null;
+  // Emb sometimes puts the set name on the line after "LOC:"
+  let wantSlug = false;
 
   const pushScene = () => {
     if (scene && day) day.scenes.push(scene);
@@ -283,6 +331,12 @@ export function parseExpanded(text: string): ScheduleModel {
     }
     // one-liner style meta that precedes Shoot Day # in the main expanded doc
     if ((m = ln.match(OL_DAY_RX))) { pendingMeta = { sr: m[3], ss: m[4] }; continue; }
+    // Victura-style banner: call/wrap hours and day type live here
+    if ((m = ln.match(V_DAY_RX))) {
+      const srss = ln.match(/SR\s*([\d:]+)\s*\/\s*SS\s*([\d:]+)/i);
+      pendingMeta = { sr: srss?.[1] || "", ss: srss?.[2] || "", hours: m[2] + "–" + m[3], type: (m[4] || "").toUpperCase() };
+      continue;
+    }
     if (pendingMeta && !pendingMeta.loc && (m = ln.match(OL_LOC_RX))) {
       pendingMeta.loc = m[1].replace(/-+$/, "").trim();
       pendingMeta.hours = m[2] + "–" + m[3];
@@ -290,6 +344,35 @@ export function parseExpanded(text: string): ScheduleModel {
       continue;
     }
     if (pendingMeta && (m = ln.match(OL_CAM_RX))) { pendingMeta.cams = m[1]; continue; }
+    // Victura: the location is a bare ALL-CAPS line under the day banner
+    if (pendingMeta && !pendingMeta.loc && !day && /^[A-Z0-9 &/.,'()\-]{6,}$/.test(ln) && !/^(DAY|SHOOT|BLOCK)\b/.test(ln)) {
+      pendingMeta.loc = ln;
+      continue;
+    }
+
+    // Emb-style day line carries date, hours and day type itself
+    if ((m = ln.match(EMB_DAY_RX)) && !/^SHOOT DAY #/i.test(ln)) {
+      pushScene();
+      const num = +m[1];
+      if (seenDays.has(num)) {
+        skipDupe = true;
+        if (day) { days.push(day); day = null; }
+        continue;
+      }
+      seenDays.add(num);
+      if (day) days.push(day);
+      day = {
+        num,
+        date: m[2].trim(),
+        sr: "", ss: "",
+        loc: pendingSection || "",
+        hours: m[3] && m[4] ? m[3] + "–" + m[4] : "",
+        type: (m[5] || "").toUpperCase(),
+        cams: "", scenes: [], pages: "",
+      };
+      pendingMeta = null;
+      continue;
+    }
 
     if ((m = ln.match(/^Shoot Day #\s*(\d+)\s+(.+)$/i))) {
       pushScene();
@@ -319,6 +402,12 @@ export function parseExpanded(text: string): ScheduleModel {
     if ((m = ln.match(/^End Day #\s*(\d+)\s+.+?--\s*Total Pages:\s*(.+)$/i))) {
       pushScene();
       if (day) { day.pages = m[2].trim(); days.push(day); day = null; }
+      continue;
+    }
+    // Emb variant: "End of Day | 1 Monday, 23 September 2024 | Page Count: 2 1/8"
+    if ((m = ln.match(/^End of Day\s*\|.*?(?:Page Count:\s*(.+))?$/i))) {
+      pushScene();
+      if (day) { day.pages = (m[1] || "").trim(); days.push(day); day = null; }
       continue;
     }
     if ((m = ln.match(/^==\s*(.+?)\s*==$/))) {
@@ -366,13 +455,66 @@ export function parseExpanded(text: string): ScheduleModel {
       block = null;
       continue;
     }
+    // Emb: scene number leads the line — "310.25 INT THE PARK - THE HUB 1 1/8 pgs"
+    if (day && (m = ln.match(EMB_SCENE_RX))) {
+      pushScene();
+      let body = m[3].replace(/\bLOC\s*:.*$/i, "").trim();
+      let pages = "";
+      const pm = body.match(/((?:\d+\s+)?\d\/8|\d+)\s*(?:pgs\.?)?\s*$/);
+      if (pm) { pages = pm[1].replace(/\s+/g, " "); body = body.slice(0, pm.index).trim(); }
+      scene = {
+        num: m[1], part: "", ie: m[2].toUpperCase(), slug: body,
+        tod: "", scriptDay: "", pages,
+        unit: "Main", desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
+        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        tags: strand ? [strand] : [],
+      };
+      block = null;
+      wantSlug = !body;
+      continue;
+    }
+    // Victura: the INT/EXT line arrives before its "Scene #" line — stash it
+    if (day && (m = ln.match(IE_LINE_RX))) {
+      let rest = m[3].trim();
+      let pages = "";
+      const pm = rest.match(/((?:\d+\s+)?\d\/8|\d+\/\d+)\s*$/);
+      if (pm) { pages = pm[1].replace(/\s+/g, " "); rest = rest.slice(0, pm.index).trim(); }
+      let scriptDay = "";
+      const sd = rest.match(/^(\d+[A-Z]?)\s+/);
+      if (sd) { scriptDay = sd[1]; rest = rest.slice(sd[0].length).trim(); }
+      pendingIE = { ie: m[1].toUpperCase(), tod: m[2][0].toUpperCase() + m[2].slice(1).toLowerCase(), slug: rest, pages, scriptDay };
+      block = null; // the previous scene's category block is over
+      continue;
+    }
+    if (day && pendingIE && (m = ln.match(V_SCENE_RX))) {
+      pushScene();
+      scene = {
+        num: m[1], part: "", ie: pendingIE.ie, slug: pendingIE.slug,
+        tod: pendingIE.tod, scriptDay: pendingIE.scriptDay, pages: pendingIE.pages,
+        unit: "Main", desc: m[2].trim(), sa: 0, veh: 0, pod: false, podVeh: 0,
+        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        tags: strand ? [strand] : [],
+      };
+      pendingIE = null;
+      block = null;
+      continue;
+    }
+
     if (scene && TAG_RX.test(ln)) {
       scene.tags.push(ln.replace(/^-+\s*|\s*-+$/g, ""));
       continue;
     }
     if (!scene && day && TAG_RX.test(ln)) continue;
 
-    if (CATEGORIES.has(ln)) { block = ln; continue; }
+    const cat = categoryOf(ln);
+    if (cat) { block = cat; continue; }
+
+    // Emb per-scene metadata between the scene line and its categories
+    if (scene && !block) {
+      if (wantSlug && /^[A-Z0-9 &/.,'()\-]{4,}$/.test(ln)) { scene.slug = ln; wantSlug = false; continue; }
+      if ((m = ln.match(/^(.+?)\s*\((D|N)\)$/)) && !scene.tod) { scene.tod = m[2] === "D" ? "Day" : "Night"; continue; }
+      if (/^[DN]\d+[A-Z]?$/i.test(ln) && !scene.scriptDay) { scene.scriptDay = ln.toUpperCase(); continue; }
+    }
 
     if (scene && !scene.desc && !block) { scene.desc = ln; continue; }
     if (!scene || !block) continue;
@@ -390,11 +532,19 @@ export function parseExpanded(text: string): ScheduleModel {
       continue;
     }
     if (block === "Background Actors") {
-      const bm = ln.match(/^(\d+)\s*[xX]\s*C$/);
+      // case-insensitive: the Piccadilly schedule writes both "160 x C" and
+      // "160 x c" — the prototype missed the lowercase form, undercounting
+      // Day 77 by 159 SAs (~£22.5k)
+      const bm = ln.match(/^(\d+)\s*[xX]\s*C$/i);
       if (bm) scene.sa = Math.max(scene.sa, +bm[1]);
       else if ((m = ln.match(/^Crowd\s*\((\d+)\)$/i)))
         scene.sa = Math.max(scene.sa, +m[1]);
-      else scene.featured!.push(parenCount(ln));
+      else pushCrowdEntry(scene.featured!, ln);
+      continue;
+    }
+    if (block === "SA's" || block === "SAs" || block === "Supporting Artists") {
+      // Emb style: "HUB AGENTS [10]"
+      pushCrowdEntry(scene.featured!, ln);
       continue;
     }
     if (block === "Featured Background Actors") { scene.featured!.push(parenCount(ln)); continue; }
@@ -415,10 +565,15 @@ export function parseExpanded(text: string): ScheduleModel {
   }
   pushScene();
   if (day) days.push(day);
+  // Emb-style schedules carry no day-level location — fall back to the
+  // first scene's set so the travel-band auto-detect has something to read
+  for (const d of days)
+    if (!d.loc && d.scenes.length && d.scenes[0].slug) d.loc = d.scenes[0].slug!;
   return { days, castMap, notes };
 }
 
 export function parseAny(text: string): ScheduleModel {
-  if (/^Shoot Day #/m.test(text)) return parseExpanded(text);
+  if (/^Shoot Day #/m.test(text) || /^SHOOT DAY\s+\d+\s*:/m.test(text))
+    return parseExpanded(text);
   return parseSchedule(text);
 }

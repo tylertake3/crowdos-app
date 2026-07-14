@@ -3,6 +3,12 @@
 // a clean browser (no saved edits, default rates) on 2026-07-13: every
 // per-day cost the prototype computed, for both engines, on the merged
 // Main + 2nd Unit demo schedule. The port must match all of them exactly.
+//
+// ONE deliberate divergence (2026-07-14): M77 is 22675.69 here, not the
+// prototype's 141.72. The schedule writes Day 77's crowd as "160 x c"
+// (lowercase); the prototype's uppercase-only pattern missed it and costed
+// the day at a single head — a real 159-SA undercount. The parser now
+// treats "N x c" case-insensitively as plain crowd.
 
 import { describe, it, expect } from "vitest";
 import crowdPerDay from "./fixtures/prototype-crowd-perday.json";

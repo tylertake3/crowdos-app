@@ -43,6 +43,9 @@ Meal penalties: short or late lunch £23.38 day / £35.08 night.
   (Correction 2026-07-13: this originally said £574,342, but that figure was captured with a
   stray day-calculator edit saved in the browser's localStorage — testing residue, not an
   intended baseline. The clean prototype in a fresh browser shows £574,155; confirmed by Tyler.)
+  (Correction 2026-07-14: current baseline **£596,689** — the prototype's parser missed Day 77's
+  crowd, written "160 x c" with a lowercase c, costing the day at one head instead of 160.
+  The ported parser reads it case-insensitively; +£22,534 vs the prototype figure.)
 
 ## Stunt engine (StuntOS)
 Performer £600/day, coordinator £1,000/day; + £17.50 holiday flat; + 55.5% usage on the day rate;

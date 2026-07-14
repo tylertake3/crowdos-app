@@ -109,15 +109,16 @@ describe("Prototype grand totals — demo schedule, default rates", () => {
   m2U.castMap = Object.assign({}, mMain.castMap, m2U.castMap);
   const mAll = mergeModels(mMain, m2U);
 
-  // CONFIRMED BASELINE (Tyler, 2026-07-13): £574,155 — the clean-prototype
-  // value (exact 574155.04, verified against the prototype live in a fresh
-  // browser). The £574,342 originally quoted in RATE-ENGINE-NOTES.md was
-  // testing residue: a day-calculator edit saved in localStorage in the
-  // browser it was captured from. See also prototype-parity.test.ts, which
-  // pins every per-day cost.
-  it("crowd mode grand total = £574,155 (Full Schedule, clean prototype)", () => {
+  // BASELINE HISTORY:
+  // · £574,342 (original notes) — testing residue in localStorage, discarded.
+  // · £574,155 — clean prototype, confirmed by Tyler 2026-07-13.
+  // · £596,689 (current) — 2026-07-14 parser correction: Day 77's crowd is
+  //   written "160 x c" (lowercase) in the schedule; the prototype's
+  //   uppercase-only pattern missed it, undercounting the day by 159 SAs
+  //   (~£22.5k). See prototype-parity.test.ts (M77).
+  it("crowd mode grand total = £596,689 (Full Schedule, incl. Day 77 lowercase-crowd fix)", () => {
     const crowd = computeCrowdCosts(mAll);
-    expect(Math.round(crowd.grand)).toBe(574155);
+    expect(Math.round(crowd.grand)).toBe(596689);
   });
 
   it("stunt mode grand total = £261,270 (Full Schedule)", () => {
