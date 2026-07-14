@@ -339,7 +339,7 @@ const OL_SCENE_RX =
 const blankScene = (unit: string, strand: string): Scene => ({
   num: "", part: "", ie: "", slug: "", tod: "", scriptDay: "", pages: "",
   unit, desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
-  cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+  cast: [], extras: [], spacts: [], saChars: [], featured: [], vehNames: [],
   tags: strand ? [strand] : [],
 });
 
@@ -577,7 +577,7 @@ export function parseExpanded(text: string): ScheduleModel {
         slug: body,
         tod, scriptDay, pages,
         unit: "Main", desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
-        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        cast: [], extras: [], spacts: [], saChars: [], featured: [], vehNames: [],
         tags: strand ? [strand] : [],
       };
       block = null;
@@ -597,7 +597,7 @@ export function parseExpanded(text: string): ScheduleModel {
         num: m[1].replace(/\s+/g, " "), part: "", ie: m[2].toUpperCase(), slug: body,
         tod: "", scriptDay: "", pages,
         unit: "Main", desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
-        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        cast: [], extras: [], spacts: [], saChars: [], featured: [], vehNames: [],
         tags: strand ? [strand] : [],
       };
       block = null;
@@ -633,7 +633,7 @@ export function parseExpanded(text: string): ScheduleModel {
         num: m[1], part: "", ie: pendingIE.ie, slug: pendingIE.slug,
         tod: pendingIE.tod, scriptDay: pendingIE.scriptDay, pages: pendingIE.pages,
         unit: "Main", desc: m[2].trim(), sa: 0, veh: 0, pod: false, podVeh: 0,
-        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        cast: [], extras: [], spacts: [], saChars: [], featured: [], vehNames: [],
         tags: strand ? [strand] : [],
       };
       pendingIE = null;
@@ -648,7 +648,7 @@ export function parseExpanded(text: string): ScheduleModel {
         num: m[1], part: (m[2] || "").replace(/\s/g, ""), ie: "", slug: "",
         tod: "", scriptDay: "", pages: "",
         unit: "Main", desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
-        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        cast: [], extras: [], spacts: [], saChars: [], featured: [], vehNames: [],
         tags: strand ? [strand] : [],
       };
       block = null;
@@ -751,12 +751,14 @@ export function parseExpanded(text: string): ScheduleModel {
       if (bm) scene.sa = Math.max(scene.sa, +bm[1]);
       else if ((m = ln.match(/^Crowd\s*\((\d+)\)$/i)))
         scene.sa = Math.max(scene.sa, +m[1]);
-      else pushCrowdEntry(scene.featured!, ln);
+      // named background ("8 airmen", "20 passersby") are SAs with a name,
+      // NOT Featured — Featured is only the explicit category below
+      else pushCrowdEntry(scene.saChars!, ln);
       continue;
     }
     if (block === "SA's" || block === "SAs" || block === "Supporting Artists") {
-      // Emb style: "HUB AGENTS [10]"
-      pushCrowdEntry(scene.featured!, ln);
+      // Emb style: "HUB AGENTS [10]" — named SAs
+      pushCrowdEntry(scene.saChars!, ln);
       continue;
     }
     if (block === "Featured Background Actors") { scene.featured!.push(parenCount(ln)); continue; }

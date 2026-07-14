@@ -111,6 +111,7 @@ export interface SaComp {
 
 export interface CrowdDayEntry extends DayCost {
   saComp: SaComp;
+  saChars: Record<string, number>; // named SA groups this day (name → peak count)
   travel: { band: string; known: boolean; amt: number; total: number };
   chars: string;
   edited: boolean;
@@ -157,15 +158,22 @@ export function computeCrowdCosts(
   let grand = 0;
 
   for (const d of model.days) {
-    const sa = dayPeakSA(d);
+    const saAnon = dayPeakSA(d); // anonymous "N x C" background, peak across scenes
     const feats: Record<string, number> = {};
     const spacts: Record<string, number> = {};
+    const saChars: Record<string, number> = {}; // named SA groups
     for (const sc of d.scenes) {
+      for (const f of sc.saChars || [])
+        saChars[f.name] = Math.max(saChars[f.name] || 0, f.count);
       for (const f of sc.featured || [])
         feats[f.name] = Math.max(feats[f.name] || 0, f.count);
       for (const f of sc.spacts || [])
         spacts[f.name] = Math.max(spacts[f.name] || 0, f.count);
     }
+    // named SAs count in the SA bucket at the SA rate (a character name does
+    // not make someone Featured — Featured is a rare SA + supplementary fees)
+    const saNamedPD = Object.values(saChars).reduce((a, n) => a + n, 0);
+    const sa = saAnon + saNamedPD;
     const featPD = Object.values(feats).reduce((a, n) => a + n, 0);
     const spactPD = Object.values(spacts).reduce((a, n) => a + n, 0);
 
@@ -194,6 +202,7 @@ export function computeCrowdCosts(
           earlyBlocks: p.earlyBlocks,
           earlyTravel: p.earlyTravel > 0,
         },
+        saChars: {},
         chars: c.chars
           .map((x) => x.name + (x.count > 1 ? " ×" + x.count : ""))
           .join(", "),
@@ -223,6 +232,7 @@ export function computeCrowdCosts(
           earlyBlocks: 0,
           earlyTravel: false,
         },
+        saChars,
         chars: "",
         travel: { band: lb.band, known: lb.known, amt: tAmt, total: heads * tAmt },
         edited: false,

@@ -611,3 +611,10 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 .reqadd{border-style:dashed;color:var(--hv);border-color:var(--hv-line)}
 .reqdone{margin-top:8px;text-align:right}
 .reqdone button{border-color:var(--hv-line);color:var(--hv);font-weight:600}
+
+/* ---- per-scene Characters editor (SA/SPACT + Featured tickbox) ---- */
+.reqrow select{background:var(--panel);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:5px 6px;font-family:var(--mono);font-size:12px}
+.reqfeat{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sub);white-space:nowrap;cursor:pointer}
+.reqfeat.off{opacity:.4}
+.reqfeat input{accent-color:var(--hv)}
+.reqchars{margin-bottom:6px}

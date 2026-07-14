@@ -37,7 +37,8 @@ export interface Scene {
   cast: CastToken[];
   extras?: NamedCount[]; // "Stunt Performers" block (named stunt extras)
   spacts?: NamedCount[];
-  featured?: NamedCount[];
+  saChars?: NamedCount[]; // named SA groups ("20 passersby", "8 airmen") — SA tier
+  featured?: NamedCount[]; // only the explicit "Featured Background Actors" — SA rate + supplementary fees
   vehNames?: string[];
   tags: string[];
 }

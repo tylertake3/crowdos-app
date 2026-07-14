@@ -83,13 +83,14 @@ describe("Victura-style Full Fat", () => {
     expect(s2.num).toBe("8.40");
     expect(s2.tod).toBe("Morning");
   });
-  it("reads 'N x name' background with headcounts", () => {
+  it("reads 'N x name' background as named SAs (not Featured)", () => {
     const [s1, s2] = m.days[0].scenes;
-    expect(s1.featured).toEqual([{ name: "airmen", count: 8 }]);
-    expect(s2.featured).toEqual([
+    expect(s1.saChars).toEqual([{ name: "airmen", count: 8 }]);
+    expect(s2.saChars).toEqual([
       { name: "mail clerk", count: 1 },
       { name: "airmen", count: 8 },
     ]);
+    expect(s1.featured).toEqual([]);
   });
 });
 
@@ -169,13 +170,14 @@ describe("Emb-style Full Fat", () => {
     expect(s2.tod).toBe("Night");
     expect(s2.pages).toBe("1 1/8");
   });
-  it("reads SA's blocks as named crowd with counts", () => {
+  it("reads SA's blocks as named SA crowd (a name doesn't mean Featured)", () => {
     const [s1, s2] = m.days[0].scenes;
-    expect(s1.featured).toEqual([{ name: "HUB WORKERS", count: 10 }]);
-    expect(s2.featured).toEqual([
+    expect(s1.saChars).toEqual([{ name: "HUB WORKERS", count: 10 }]);
+    expect(s2.saChars).toEqual([
       { name: "HUB WORKERS", count: 10 },
       { name: "GUARDS", count: 4 },
     ]);
-    expect(m.days[1].scenes[0].featured).toEqual([{ name: "DRIVERS", count: 2 }]);
+    expect(m.days[1].scenes[0].saChars).toEqual([{ name: "DRIVERS", count: 2 }]);
+    expect(s1.featured).toEqual([]); // Featured is only the explicit category
   });
 });
