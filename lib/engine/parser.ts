@@ -34,6 +34,7 @@ export function classifyToken(t: string): CastToken | null {
   if (!tok) return null;
   if (/^ST$/i.test(tok)) return { code: "ST", type: "stuntCoord" };
   if (/^SC$/i.test(tok)) return { code: "SC", type: "stuntCoord" };
+  if (/^xx\d+$/i.test(tok)) return { code: tok.toUpperCase(), type: "cast" };
   if (/^st\d+$/i.test(tok)) return { code: tok.toLowerCase(), type: "stuntPerf" };
   if (/^\d+sd$/i.test(tok)) return { code: tok.toLowerCase(), type: "stuntDbl" };
   if (/^\d+(cd|dd|d)$/i.test(tok)) return { code: tok.toLowerCase(), type: "double" };
@@ -224,7 +225,7 @@ const CATEGORIES = new Set([
   "Sound", "Music", "Mechanical Effects", "Greenery", "Electric",
   "Miscellaneous", "Optical FX", "Painting", "Construction", "Special FX",
   "Video", "Communications", "Stand Ins", "SA's", "SAs", "Supporting Artists",
-  "Stunts",
+  "Stunts", "Background",
 ]);
 const SKIP_RX =
   /^(TILLY KENNINGTON|Registered Address|PICCADILLY \/\/|Printed on |\(Continued on next page\)|'CLOWN TOWN'|\*\*2ND UNIT\*\*|2U Director|Schedule Issued|Script Versions|rd$|th$|\d{2}-[A-Za-z]{3}-\d{4}$|\*+CONFIDENTIAL|©|Production Office:|This document is highly confidential|Therefore, please ensure|Dated:?$|FULL FAT|INTERIM SHOOTING SCHEDULE|SHOOTING$|Shooting Schedule$|SHOOT SCHED)/i;
@@ -249,6 +250,45 @@ const IE_LINE_RX =
 const V_SCENE_RX = /^Scene\s*#\s*([\d][\d.\/]*[A-Za-z]?)\s*(.*)$/i;
 // Emb scene line: "310.25 INT 1/8 pgs LOC:" or "312.64pt2 INT THE PARK - THE HUB 2/8 pgs"
 const EMB_SCENE_RX = /^(\d+\.\d+(?:pt\d+|[A-Za-z])?)\s+(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\b\s*(.*)$/i;
+// Generic scene lines (DD/POP-style Full Fats): "Scene # 7 INT SLUG Day",
+// "Sc 3 EXT. BUS STOP (DFN) NIGHT FF1 2/8 pgs", or a bare "Sc 24" whose
+// INT/EXT line follows. Integer scene numbers, no "pgs." required.
+const GEN_SCENE_RX =
+  /^(?:Scene\s*#|Sc)\s+(\d+[A-Za-z]?(?:\/\d+[A-Za-z]?)?)\s*(?:Pt\s*(\d\s*\/\s*\d))?\s*(.*)$/i;
+// day-meta shapes seen around these banners
+const SUN_RX = /SUNRISE:?\s*([\d:]+).*?SUNSET:?\s*([\d:]+)/i;
+const TYPE_HOURS_RX = /^(CWD EARLY|CWD|SCWD|SWD|CWN)\s*[-–]\s*(\d{3,4})\s*[-–]\s*(\d{3,4})$/i;
+const HOURS_TYPE_RX = /^(\d{3,4})\s*[-–]\s*(\d{3,4})\s+(CWD EARLY|CWD|SCWD|SWD|CWN)$/i;
+const POP_DAY_RX = /^DAY\s+\d+:\s*[A-Z].*?\s[-–]\s+(.+)$/;
+
+// Parse the remainder of a generic scene line: optional INT/EXT (with or
+// without dots), (DFN) day-for-night markers, trailing time-of-day +
+// script-day + page count (with or without "pgs").
+function applySceneHead(scene: Scene, text: string): void {
+  let body = text.trim();
+  const ieM = body.match(/^(INT\.?\s*\/\s*EXT\.?|EXT\.?\s*\/\s*INT\.?|I\/E|INT\b\.?|EXT\b\.?)\s*(.*)$/i);
+  if (ieM) {
+    scene.ie = ieM[1].toUpperCase().replace(/\./g, "").replace(/\s/g, "");
+    body = ieM[2];
+  }
+  if (/\(DFN\)/i.test(body)) {
+    scene.tod = scene.tod || "Night";
+    body = body.replace(/\(DFN\)/gi, " ").replace(/\s{2,}/g, " ").trim();
+  }
+  const pgs = body.match(/\s((?:\d+\s+)?\d\/8|\d+)\s*pgs\.?\s*$/i);
+  if (pgs) { scene.pages = pgs[1].replace(/\s+/g, " "); body = body.slice(0, pgs.index).trim(); }
+  else {
+    const frac = body.match(/\s((?:\d+\s+)?\d\/8)\s*$/);
+    if (frac) { scene.pages = frac[1].replace(/\s+/g, " "); body = body.slice(0, frac.index).trim(); }
+  }
+  const tm = body.match(/\s+(Day|Night|Dawn|Dusk|Morning|Afternoon|Evening)(?:\s+([A-Z0-9]{1,6}))?\s*$/i);
+  if (tm) {
+    scene.tod = tm[1][0].toUpperCase() + tm[1].slice(1).toLowerCase();
+    scene.scriptDay = tm[2] || scene.scriptDay;
+    body = body.slice(0, tm.index).trim();
+  }
+  if (body) scene.slug = body;
+}
 
 // People-block entries arrive in several shapes; junk (page headers, merged
 // vehicle columns) must not become phantom artists. A bare name is only
@@ -317,6 +357,8 @@ export function parseExpanded(text: string): ScheduleModel {
   let pendingIE: { ie: string; tod: string; slug: string; pages: string; scriptDay: string } | null = null;
   // Emb sometimes puts the set name on the line after "LOC:"
   let wantSlug = false;
+  // POP writes "Sc 24" alone — its INT/EXT line follows
+  let genWaitIE = false;
 
   const pushScene = () => {
     if (scene && day) day.scenes.push(scene);
@@ -346,8 +388,33 @@ export function parseExpanded(text: string): ScheduleModel {
       continue;
     }
     if (pendingMeta && (m = ln.match(OL_CAM_RX))) { pendingMeta.cams = m[1]; continue; }
+    // DD/POP day banners: sunrise/sunset, hours + day-type in either order,
+    // and POP's "DAY 1: TUESDAY 20TH JULY - CAMBERWELL" location suffix
+    if ((m = ln.match(SUN_RX)) && !/^Shoot Day/i.test(ln)) {
+      pendingMeta = pendingMeta || { sr: "", ss: "" };
+      if (!pendingMeta.sr) pendingMeta.sr = m[1];
+      if (!pendingMeta.ss) pendingMeta.ss = m[2];
+      continue;
+    }
+    if ((m = ln.match(TYPE_HOURS_RX))) {
+      pendingMeta = pendingMeta || { sr: "", ss: "" };
+      pendingMeta.type = m[1].toUpperCase();
+      pendingMeta.hours = m[2] + "–" + m[3];
+      continue;
+    }
+    if ((m = ln.match(HOURS_TYPE_RX))) {
+      pendingMeta = pendingMeta || { sr: "", ss: "" };
+      pendingMeta.hours = m[1] + "–" + m[2];
+      pendingMeta.type = m[3].toUpperCase();
+      continue;
+    }
+    if ((m = ln.match(POP_DAY_RX))) {
+      pendingMeta = pendingMeta || { sr: "", ss: "" };
+      if (!pendingMeta.loc) pendingMeta.loc = m[1].trim();
+      continue;
+    }
     // Victura: the location is a bare ALL-CAPS line under the day banner
-    if (pendingMeta && !pendingMeta.loc && !day && /^[A-Z0-9 &/.,'()\-]{6,}$/.test(ln) && !/^(DAY|SHOOT|BLOCK)\b/.test(ln)) {
+    if (pendingMeta && !pendingMeta.loc && !day && /^[A-Z0-9 &/.,'()\-]{6,}$/.test(ln) && !/^(DAY|SHOOT|BLOCK|STUNTS?$|WEEK)\b/.test(ln)) {
       pendingMeta.loc = ln;
       continue;
     }
@@ -512,6 +579,26 @@ export function parseExpanded(text: string): ScheduleModel {
       if (!scene.slug) wantSlug = true; // set name may sit on the next line
       continue;
     }
+    // DD/POP generic scene lines — must come after the stricter formats
+    if (day && (m = ln.match(GEN_SCENE_RX)) && !/^Sc\s+\d+\s*[-–]/.test(ln)) {
+      pushScene();
+      scene = {
+        num: m[1], part: (m[2] || "").replace(/\s/g, ""), ie: "", slug: "",
+        tod: "", scriptDay: "", pages: "",
+        unit: "Main", desc: "", sa: 0, veh: 0, pod: false, podVeh: 0,
+        cast: [], extras: [], spacts: [], featured: [], vehNames: [],
+        tags: strand ? [strand] : [],
+      };
+      block = null;
+      applySceneHead(scene, m[3] || "");
+      genWaitIE = !scene.ie; // "Sc 24" alone — INT/EXT arrives on the next line
+      continue;
+    }
+    // the INT/EXT line following a bare "Sc 24"
+    if (scene && genWaitIE) {
+      genWaitIE = false;
+      if (/^(INT|EXT|I\/E)/i.test(ln)) { applySceneHead(scene, ln); continue; }
+    }
 
     if (scene && TAG_RX.test(ln)) {
       scene.tags.push(ln.replace(/^-+\s*|\s*-+$/g, ""));
@@ -529,12 +616,19 @@ export function parseExpanded(text: string): ScheduleModel {
       if (/^[DN]\d+[A-Z]?$/i.test(ln) && !scene.scriptDay) { scene.scriptDay = ln.toUpperCase(); continue; }
     }
 
+    // a lone tod/pages tail line ("DAY 16 3/8 pgs") completes the scene
+    // head rather than becoming its description
+    if (scene && !block && !scene.tod &&
+        /^(Day|Night|Dawn|Dusk|Morning|Afternoon|Evening)\b(\s+[A-Z0-9]{1,6})?(\s+(?:\d+\s+)?\d\/8)?(\s*pgs\.?)?\s*$/i.test(ln)) {
+      applySceneHead(scene, ln);
+      continue;
+    }
     if (scene && !scene.desc && !block) { scene.desc = ln; continue; }
     if (!scene || !block) continue;
 
     // block content
     if (block === "Cast Members") {
-      const cm = ln.match(/^(\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*|ST|SC)\.\s*(.+)$/i);
+      const cm = ln.match(/^(\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*|ST|SC|XX\d+)\.\s*(.+)$/i);
       if (cm) {
         const tok = classifyToken(cm[1]);
         if (tok) {
@@ -559,7 +653,7 @@ export function parseExpanded(text: string): ScheduleModel {
       }
       continue;
     }
-    if (block === "Background Actors") {
+    if (block === "Background Actors" || block === "Background") {
       // case-insensitive: the Piccadilly schedule writes both "160 x C" and
       // "160 x c" — the prototype missed the lowercase form, undercounting
       // Day 77 by 159 SAs (~£22.5k)
