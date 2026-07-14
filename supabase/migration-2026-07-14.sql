@@ -15,6 +15,9 @@ alter table productions add column if not exists sched_date text;
 -- and the production's own rate card ({name, vals}) applied when opened
 alter table productions add column if not exists format text;
 alter table productions add column if not exists rate_card jsonb;
+-- schedule revision history: many uploads per unit; is_current marks the one
+-- that drives live numbers (default = newest upload, this is the manual override)
+alter table productions add column if not exists is_current boolean default false;
 
 -- Productions become a real entity: created once with settings, then
 -- schedules are imported INTO them (the `productions` table above is,

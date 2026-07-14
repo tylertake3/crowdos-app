@@ -547,3 +547,47 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 .dash-group-tools{display:flex;gap:12px;font-family:var(--body);font-size:10.5px;font-weight:600;letter-spacing:.02em;text-transform:none}
 .dash-group-tools span{cursor:pointer;color:var(--faint)}
 .dash-group-tools span:hover{color:var(--hv)}
+
+/* ---- dashboard v2: production → unit → revision history ---- */
+.prodlist{margin-top:4px}
+.prodcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
+.prodcard .ph{display:flex;align-items:baseline;gap:10px;padding:14px 16px;cursor:pointer}
+.prodcard .ph .chev{color:var(--faint);font-size:10px;transition:transform .12s;align-self:center}
+.prodcard .ph .chev.open{transform:rotate(90deg)}
+.prodcard .pname{font-family:var(--cond);font-size:18px;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+.prodcard .pmeta{font-size:11px;color:var(--faint)}
+.prodcard .ptools{margin-left:auto;color:var(--faint);font-size:12px;cursor:pointer}
+.prodcard .ptools span:hover{color:var(--hv)}
+.prodcard .pfig{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--money);min-width:90px;text-align:right}
+.prodcard.demo .pfig{color:var(--money)}
+.punits{border-top:1px solid var(--line)}
+.unitrow{border-bottom:1px solid var(--line)}
+.unitrow:last-child{border-bottom:none}
+.uh{display:flex;align-items:center;gap:10px;padding:9px 16px 9px 14px;font-size:13px;cursor:pointer;background:var(--panel2)}
+.uh:hover{background:var(--hover)}
+.uh .chev{color:var(--faint);font-size:9px;transition:transform .12s}
+.uh.open .chev{transform:rotate(90deg)}
+.uh .uname{font-weight:600}
+.uh .ucur{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.uh .ufig{margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--money)}
+.verlist{display:none;padding:6px 16px 12px 34px}
+.unitrow.expanded .verlist{display:block}
+.verrow{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;font-size:11.5px;margin-bottom:3px;cursor:pointer}
+.verrow:hover{background:var(--hover)}
+.verrow.current{background:var(--hv-dim);border:1px solid var(--hv-line)}
+.verrow:not(.current){color:var(--sub)}
+.revchip{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:5px;min-width:60px;text-align:center;background:var(--line2);color:var(--ink)}
+.verrow.current .revchip{background:var(--hv);color:#000}
+.verdate{font-family:var(--mono);font-size:10px;min-width:56px;color:var(--faint)}
+.vertag{font-size:9px;padding:1px 7px;border-radius:9px;background:var(--hv);color:#000;font-weight:800;letter-spacing:.05em}
+.makecur{font-size:10px;color:var(--faint);border:1px solid var(--line2);border-radius:9px;padding:1px 8px;cursor:pointer}
+.makecur:hover{color:var(--hv);border-color:var(--hv-line)}
+.verrow .diff{font-size:10px;color:var(--faint)}
+.verrow.current .diff{color:var(--hv2)}
+.verfig-wrap{margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--money)}
+.verrow .del{padding-left:4px;color:var(--faint);opacity:.5}
+.verrow .del:hover{opacity:1}
+.noreq{color:var(--faint);font-size:11px;font-style:italic}
+.uploadrow{padding:8px 10px;color:var(--faint);font-size:11px;border:1px dashed var(--line2);border-radius:7px;margin:6px 0 2px;cursor:pointer}
+.uploadrow:hover{border-color:var(--hv-line);color:var(--hv)}
+.uploadrow.addunit{margin:8px 16px 12px}
