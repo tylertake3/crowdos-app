@@ -36,7 +36,7 @@ export const PACT = {
   hol: 0.1207,
   travelA: 17.09,
   travelB: 23.89,
-  early: 19.73, // early-call travel (called at or before 06:00)
+  early: 20.91, // early-call travel (called at or before 06:00) — FAA 2026, from 1 Mar 2026
   stdHrs: 9, // Standard Day framework
   cwdHrs: 7, // Continuous Working Day framework
 } as const;

@@ -3,10 +3,12 @@
 // rate maths is never duplicated in views (RATE-ENGINE-NOTES.md).
 
 import type {
+  CharacterRow,
   CrowdDayConfig,
   CrowdTier,
   ScheduleModel,
   ShootDay,
+  TravelBand,
 } from "./types";
 import {
   pactPerHead,
@@ -27,6 +29,22 @@ import { dayPeakSA, weekKey } from "./model";
 export interface CrowdSettings {
   pact: PactSettings;
   spact: SpactSettings;
+  // Per-production travel-band overrides from Production Settings → Locations:
+  // location name → forced band. Matched case-insensitively as a substring of
+  // the day's location text (day locations often list several places).
+  bands?: Record<string, TravelBand>;
+}
+
+// The band for a day's location: an override wins over the gazetteer.
+export function bandFor(loc: string, s: CrowdSettings): { band: TravelBand; known: boolean } {
+  const l = (loc || "").toLowerCase();
+  if (s.bands && l) {
+    for (const [name, band] of Object.entries(s.bands)) {
+      if (name && l.includes(name.toLowerCase())) return { band, known: true };
+    }
+  }
+  const lb = locationBand(loc);
+  return { band: lb.band, known: lb.known };
 }
 
 export const CROWD_DEFAULTS: CrowdSettings = {
@@ -68,6 +86,15 @@ export interface DayCost {
   spactCost: number;
 }
 
+// The effective day config for one character row — a row with a call and/or
+// wrap override is priced against those times instead of the day default
+// (e.g. zombies called 04:00 for makeup while the rest of the crowd is
+// called 08:00). Overriding only one of the pair leaves the other inherited.
+export function cdRowConfig(c: CrowdDayConfig, ch: CharacterRow): CrowdDayConfig {
+  if (!ch.call && !ch.wrap) return c;
+  return { ...c, call: ch.call || c.call, wrap: ch.wrap || c.wrap };
+}
+
 // Cost of one configured day across all its character rows.
 // Supplementary fees are per head (Featured = SA + sups).
 export function cdDayCost(
@@ -80,7 +107,7 @@ export function cdDayCost(
   const spacts: Record<string, number> = {};
   for (const ch of c.chars) {
     const n = +ch.count || 0;
-    const rowPer = cdPerHead(c, ch.tier, s).per + (+(ch.sup ?? 0) || 0);
+    const rowPer = cdPerHead(cdRowConfig(c, ch), ch.tier, s).per + (+(ch.sup ?? 0) || 0);
     cost += rowPer * n;
     if (ch.tier === "SA") {
       sa += n; saCost += rowPer * n;
@@ -93,6 +120,30 @@ export function cdDayCost(
     }
   }
   return { cost, sa, featPD, spactPD, feats, spacts, saCost, featCost, spactCost };
+}
+
+// OT & early-call quantities for the day's SA rows, summed per row. Unlike
+// base/holiday (which only depend on day-level shift/PH and so are uniform
+// across every SA head), OT and early-call depend on call/wrap — and a row
+// with its own override prices differently from the day default. So these
+// must be summed row-by-row rather than computed once and multiplied by the
+// day's total SA headcount.
+function cdSaOtEarly(c: CrowdDayConfig, s: CrowdSettings) {
+  let heads = 0, ot = 0, early = 0, otDayB = 0, otNightB = 0, earlyBlocks = 0, earlyTravelHeads = 0;
+  for (const ch of c.chars) {
+    if (ch.tier !== "SA") continue;
+    const n = +ch.count || 0;
+    if (!n) continue;
+    const p = cdPerHead(cdRowConfig(c, ch), "SA", s);
+    heads += n;
+    ot += p.ot * n;
+    early += (p.earlyPay + p.earlyTravel) * n;
+    otDayB += p.otDayB * n;
+    otNightB += p.otNightB * n;
+    earlyBlocks += p.earlyBlocks * n;
+    if (p.earlyTravel > 0) earlyTravelHeads += n;
+  }
+  return { heads, ot, early, otDayB, otNightB, earlyBlocks, earlyTravel: earlyTravelHeads > 0 };
 }
 
 // SA cost composition for a day — used by the views' hover tooltips.
@@ -188,19 +239,20 @@ export function computeCrowdCosts(
         c.travel === "A" ? s.pact.travelA : c.travel === "B" ? s.pact.travelB : 0;
       const headsE = r.sa + r.featPD + r.spactPD;
       const p = cdPerHead(c, "SA", s);
+      const agg = cdSaOtEarly(c, s);
       entry = {
         ...r,
         saComp: {
           rates: r.sa * p.base,
           hol: r.sa * p.hol,
-          ot: r.sa * p.ot,
-          early: r.sa * (p.earlyPay + p.earlyTravel),
-          otPer: p.ot,
-          earlyPer: p.earlyPay + p.earlyTravel,
-          otDayB: p.otDayB,
-          otNightB: p.otNightB,
-          earlyBlocks: p.earlyBlocks,
-          earlyTravel: p.earlyTravel > 0,
+          ot: agg.ot,
+          early: agg.early,
+          otPer: agg.heads ? agg.ot / agg.heads : p.ot,
+          earlyPer: agg.heads ? agg.early / agg.heads : p.earlyPay + p.earlyTravel,
+          otDayB: agg.otDayB,
+          otNightB: agg.otNightB,
+          earlyBlocks: agg.earlyBlocks,
+          earlyTravel: agg.earlyTravel,
         },
         saChars: {},
         chars: c.chars
@@ -210,7 +262,7 @@ export function computeCrowdCosts(
         edited: true,
       };
     } else {
-      const lb = locationBand(d.loc);
+      const lb = bandFor(d.loc, s);
       const tAmt = lb.band === "B" ? s.pact.travelB : s.pact.travelA;
       const heads = sa + featPD + spactPD;
       const saCost = sa * s.pact.sa * hp;

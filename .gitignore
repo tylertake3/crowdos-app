@@ -27,3 +27,6 @@ next-env.d.ts
 
 # local check-builds (keeps dev server cache intact)
 .next-check
+
+# database backups — never commit (contain all production data)
+backups/

@@ -57,6 +57,11 @@ export interface ShootDay {
   unit?: string; // 'Main' | '2nd', set by prepModel
   id?: string; //  M12 / U3, set by prepModel
   _date?: Date | null; // parsed calendar date, set by prepModel
+  // Already-shot history stitched in from the previous revision — mid-shoot
+  // schedules only cover the remaining days, but the production keeps its
+  // full timeline (and true total spend). Set by the revision-update flow.
+  carried?: boolean;
+  fromRev?: string; // revision label the day was shot under, e.g. "Blue"
 }
 
 export interface ScheduleNote {
@@ -81,6 +86,11 @@ export interface CharacterRow {
   tier: CrowdTier;
   scene?: string; // scene refs this character belongs to
   sup?: number; //  supplementary fees per head (this is how Featured works)
+  // Per-row call/wrap overrides — e.g. zombies called 04:00 for makeup while
+  // the rest of the day's crowd is called 08:00. Unset = inherit the day's
+  // call/wrap. Overriding one of the pair leaves the other inherited.
+  call?: string;
+  wrap?: string;
 }
 
 // Per-day crowd configuration (call/wrap etc.) — the prototype's CDAY entries.

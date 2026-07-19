@@ -10,7 +10,7 @@
 // · Framework differs from SA: SWD 10h (incl. 1h lunch) / CWD 8h.
 // · Same OT money as PACT, shown holiday-inclusive: £11.69 day,
 //   £17.54 after 22:00 & early call (PH £17.54 / £26.29).
-// · Early-call travel £20.91 (vs SA £19.73). Same travel bands A/B.
+// · Early-call travel £20.91 (SA matches, FAA 2026 from 1 Mar 2026). Same travel bands A/B.
 
 import type { CrowdDayConfig } from "./types";
 import {

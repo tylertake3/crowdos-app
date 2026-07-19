@@ -8,3 +8,5 @@ export * from "./model";
 export * from "./crowd";
 export * from "./stunt";
 export * from "./parser";
+export * from "./merge";
+export * from "./revise";
