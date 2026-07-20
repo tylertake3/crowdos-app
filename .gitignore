@@ -30,3 +30,4 @@ next-env.d.ts
 
 # database backups — never commit (contain all production data)
 backups/
+public/audit-tmp/

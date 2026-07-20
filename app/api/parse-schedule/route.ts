@@ -210,16 +210,31 @@ export async function POST(req: Request) {
     );
   }
 
-  let text = "", glossary: any[] = [];
+  let text = "", glossary: any[] = [], images: { media_type: string; data: string }[] = [];
   try {
     const body = await req.json();
-    text = body.text;
+    text = typeof body.text === "string" ? body.text : "";
     glossary = Array.isArray(body.glossary) ? body.glossary : [];
+    // Photographed schedule pages — base64 JPEG/PNG/WebP, client-downscaled.
+    if (Array.isArray(body.images)) {
+      const okType = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+      images = body.images
+        .filter((im: any) => im && okType.has(im.media_type) && typeof im.data === "string" && im.data.length > 100)
+        .slice(0, 12); // a phone-shot schedule is a handful of pages, not a novel
+      const totalB64 = images.reduce((a, im) => a + im.data.length, 0);
+      if (totalB64 > 4_200_000) {
+        return Response.json(
+          { error: "Those photos are too large even after compression — upload fewer pages at a time." },
+          { status: 413 },
+        );
+      }
+    }
   } catch {
     return Response.json({ error: "Bad request body." }, { status: 400 });
   }
-  if (!text || typeof text !== "string" || !text.trim()) {
-    return Response.json({ error: "No schedule text supplied." }, { status: 400 });
+  const hasText = !!(text && typeof text === "string" && text.trim());
+  if (!hasText && !images.length) {
+    return Response.json({ error: "No schedule text or images supplied." }, { status: 400 });
   }
   // ~1.1M chars ≈ well under Haiku's 200K-token context; guard against runaway inputs.
   if (text.length > 1_100_000) text = text.slice(0, 1_100_000);
@@ -235,12 +250,17 @@ export async function POST(req: Request) {
     : "";
 
   const client = new Anthropic({ apiKey });
-  const chunks = chunkText(text);
+  // Images (photographed pages) go as ONE vision read — pages belong
+  // together, and the client already capped count and size. Text goes
+  // through the chunked path as before.
+  const chunks = hasText ? chunkText(text) : ["(photographed schedule pages attached)"];
 
   // At most 2 chunks in flight — keeps a fresh, low-tier account under its
   // rate limits. Each chunk fails independently (see readChunk), so one bad
   // chunk never kills the whole read.
-  const results = await mapLimit(chunks, 2, (c) => readChunk(client, prefix + c));
+  const results = images.length
+    ? [await readChunk(client, prefix + (hasText ? text.slice(0, 20_000) : "Read the attached photographed schedule pages, in order."), images)]
+    : await mapLimit(chunks, 2, (c) => readChunk(client, prefix + c));
 
   const rawDays: any[] = [];
   const castMap: any[] = [];
@@ -317,16 +337,26 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R
 // Read one chunk of schedule text → its raw days/castMap (pre-normalize).
 // Never throws: on any failure it returns an `error` marker so the other
 // chunks still count.
-async function readChunk(client: Anthropic, text: string): Promise<{
+async function readChunk(client: Anthropic, text: string, images?: { media_type: string; data: string }[]): Promise<{
   days: any[]; castMap: any[]; questions: any[]; truncated: boolean; inTok: number; outTok: number; error?: string;
 }> {
   try {
+    // Photographed pages ride as image blocks ahead of the instruction text —
+    // same schema, same system prompt; the model reads pixels instead of a
+    // pdf.js text layer.
+    const content: Anthropic.ContentBlockParam[] = [
+      ...(images || []).map((im): Anthropic.ImageBlockParam => ({
+        type: "image",
+        source: { type: "base64", media_type: im.media_type as any, data: im.data },
+      })),
+      { type: "text", text },
+    ];
     const stream = client.messages.stream({
       model: "claude-haiku-4-5",
       max_tokens: 32000,
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } } as any,
-      messages: [{ role: "user", content: text }],
+      messages: [{ role: "user", content }],
     });
     const msg = await stream.finalMessage();
     const truncated = msg.stop_reason === "max_tokens";
