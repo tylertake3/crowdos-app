@@ -10,3 +10,4 @@ export * from "./stunt";
 export * from "./parser";
 export * from "./merge";
 export * from "./revise";
+export * from "./dance";
