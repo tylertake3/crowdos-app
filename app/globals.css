@@ -1124,3 +1124,11 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .crossspin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--hv);
   border-radius:50%;animation:crossspin .8s linear infinite;vertical-align:-2px;margin-right:5px}
 @keyframes crossspin{to{transform:rotate(360deg)}}
+
+/* card pickers wrap as individual chips — a joined segmented pill looks
+   broken once it has to wrap onto a second row on smaller screens */
+.seg.cards{display:flex;flex-wrap:wrap;gap:7px;background:none;border:none;overflow:visible;border-radius:0}
+.seg.cards button{background:var(--panel2);border:1px solid var(--line2)!important;border-radius:9px;padding:8px 13px}
+.seg.cards button.on{background:var(--hv);border-color:var(--hv)!important;color:var(--hvink)}
+/* collapsible Calculator header on the dashboard */
+.dash-calchead .chev{color:var(--sub);font-size:15px;display:inline-block;transition:transform .12s;margin-left:4px}
