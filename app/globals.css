@@ -1094,3 +1094,33 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .code.feat.named.click{background:var(--notebg);color:var(--note)}
 .code.spact.named.click{background:rgba(183,138,255,.12);color:#9a6cd8}
 .code.named.click:hover{border-color:var(--crowd)!important;background:var(--crowd);color:#fff}
+
+/* inline naming expander under an Unnamed SA row in Briefs */
+.anonrow{cursor:pointer}
+.anonexp td{background:var(--panel2)!important;padding:0 14px 14px}
+.anonexp-wrap{display:flex;flex-direction:column;gap:10px;padding-top:10px}
+.anonexp-scene{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.anonexp-head{font-size:12.5px;margin-bottom:8px}
+.anonexp-scene .reqdone{display:none} /* commits on change; Done is a day-board affordance */
+.anonexp-scene .reqarea{display:block}
+
+/* cover photos + avatars */
+.gposter.haspic{background-size:cover;background-position:center}
+.gposter.haspic span{display:none}
+.au-profile{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.au-avatar{width:52px;height:52px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+  display:grid;place-items:center;font-weight:600;font-size:20px;color:var(--sub);overflow:hidden;flex-shrink:0}
+.au-avatar img{width:100%;height:100%;object-fit:cover}
+.btn-avatar{width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:-5px;margin-right:7px}
+
+/* real-location editor on the day header */
+.dloc-edit{background:none;border:none;color:var(--faint);font-size:12px;padding:2px 4px;line-height:1}
+.dloc-edit:hover{color:var(--hv)}
+.dloc-edit.on{color:var(--hv)}
+.dloc-input{background:var(--panel);border:1px solid var(--hv-line);border-radius:7px;color:var(--ink);
+  padding:4px 9px;font-size:12.5px;font-weight:600;min-width:220px;font-family:inherit}
+
+/* AI cross-check spinner on the review page */
+.crossspin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--hv);
+  border-radius:50%;animation:crossspin .8s linear infinite;vertical-align:-2px;margin-right:5px}
+@keyframes crossspin{to{transform:rotate(360deg)}}

@@ -33,6 +33,12 @@ export interface CrowdSettings {
   // location name → forced band. Matched case-insensitively as a substring of
   // the day's location text (day locations often list several places).
   bands?: Record<string, TravelBand>;
+  // Budget assumptions for UNEDITED days ("assume everyone's on CWD doing
+  // 2h over"): days without their own calculator config are costed per-head
+  // at these hours instead of the flat day rate. The wrap time anchors on the
+  // SA framework, so SPACT (longer framework) correctly accrues less OT for
+  // the same unit day. Absent = the old flat-rate default, unchanged.
+  baseDay?: { fw: "std" | "cwd"; otHours: number };
 }
 
 // The band for a day's location: an override wins over the gazetteer.
@@ -260,6 +266,45 @@ export function computeCrowdCosts(
           .join(", "),
         travel: { band: c.travel, known: true, amt: tAmt, total: headsE * tAmt },
         edited: true,
+      };
+    } else if (s.baseDay) {
+      // production-level budget assumption: cost unedited days per-head at
+      // the assumed hours (07:00 start; wrap = SA framework + OT hours)
+      const lb = bandFor(d.loc, s);
+      const fwH = pactFrameworkHours(s.baseDay.fw);
+      const wrapH = 7 + fwH + Math.max(0, s.baseDay.otHours || 0);
+      const cfg: CrowdDayConfig = {
+        shift: "Day", fw: s.baseDay.fw, ph: false,
+        call: "07:00",
+        wrap: `${String(Math.floor(wrapH) % 24).padStart(2, "0")}:${String(Math.round((wrapH % 1) * 60)).padStart(2, "0")}`,
+        travel: lb.band, chars: [],
+      };
+      const saP = cdPerHead(cfg, "SA", s);
+      const spP = cdPerHead(cfg, "SPACT", s);
+      const heads = sa + featPD + spactPD;
+      const saCost = sa * saP.per;
+      const featCost = featPD * saP.per; // Featured = SA rate (+ sups only when edited)
+      const spactCost = spactPD * spP.per;
+      entry = {
+        sa, feats, spacts, featPD, spactPD,
+        cost: saCost + featCost + spactCost,
+        saCost, featCost, spactCost,
+        saComp: {
+          rates: sa * saP.base,
+          hol: sa * saP.hol,
+          ot: sa * saP.ot,
+          early: sa * (saP.earlyPay + saP.earlyTravel),
+          otPer: saP.ot,
+          earlyPer: saP.earlyPay + saP.earlyTravel,
+          otDayB: saP.otDayB,
+          otNightB: saP.otNightB,
+          earlyBlocks: saP.earlyBlocks,
+          earlyTravel: saP.earlyTravel > 0,
+        },
+        saChars,
+        chars: "",
+        travel: { band: lb.band, known: lb.known, amt: saP.travel, total: heads * saP.travel },
+        edited: false,
       };
     } else {
       const lb = bandFor(d.loc, s);

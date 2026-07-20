@@ -7,6 +7,7 @@ import {
   cdPerHead,
   cdDayCost,
   cdRowConfig,
+  CROWD_DEFAULTS,
   computeCrowdCosts,
   computeStuntCosts,
   parseAny,
@@ -248,5 +249,47 @@ describe("Per-character call/wrap overrides — zombies at 04:00, civilians at 0
     const dayLevel = cdPerHead(c, "SA");
     expect(dayLevel.earlyPay + dayLevel.earlyTravel).toBe(0);
     expect(k.early).toBeGreaterThan(0);
+  });
+});
+
+describe("Production base-day budget assumptions (unedited days)", () => {
+  const model = (): ScheduleModel =>
+    prepModel({
+      days: [{
+        num: 1, date: "Monday 6th July 2026", sr: "", ss: "", loc: "Barbican", hours: "", type: "", cams: "", pages: "",
+        scenes: [{ num: "1", part: "", ie: "EXT", slug: "", tod: "Day", scriptDay: "", pages: "1", unit: "Main",
+          desc: "", sa: 10, veh: 0, pod: false, cast: [], tags: [] }],
+      }],
+      castMap: {}, notes: [],
+    } as any, "Main");
+
+  it("absent baseDay keeps the flat default exactly", () => {
+    const grand = computeCrowdCosts(model()).grand;
+    // 10 SA × (£111.21 × 1.1207) + 10 × £17.09 travel (Barbican = Cat A)
+    expect(Math.round(grand * 100) / 100).toBe(Math.round((10 * 111.21 * 1.1207 + 10 * 17.09) * 100) / 100);
+  });
+
+  it("baseDay {std, 0h OT} equals the flat default (framework day, no OT)", () => {
+    const flat = computeCrowdCosts(model()).grand;
+    const based = computeCrowdCosts(model(), {}, { ...CROWD_DEFAULTS, baseDay: { fw: "std", otHours: 0 } }).grand;
+    expect(Math.round(based * 100)).toBe(Math.round(flat * 100));
+  });
+
+  it("baseDay {cwd, 2h OT} prices unedited days per-head at 07:00–16:00 CWD", () => {
+    const based = computeCrowdCosts(model(), {}, { ...CROWD_DEFAULTS, baseDay: { fw: "cwd", otHours: 2 } }).grand;
+    const per = cdPerHead(
+      { shift: "Day", fw: "cwd", ph: false, call: "07:00", wrap: "16:00", travel: "A", chars: [] },
+      "SA", { ...CROWD_DEFAULTS, baseDay: { fw: "cwd", otHours: 2 } }
+    );
+    expect(per.otBlocks).toBe(4); // 2h over the 7h CWD framework
+    expect(Math.round(based * 100)).toBe(Math.round(per.per * 10 * 100));
+  });
+
+  it("an edited day (its own calculator config) ignores the base assumption", () => {
+    const cfg: CrowdDayConfig = { shift: "Day", fw: "std", ph: false, call: "07:00", wrap: "16:00", travel: "A",
+      chars: [{ name: "", count: 10, tier: "SA" }] };
+    const withBase = computeCrowdCosts(model(), { "Main|1": cfg }, { ...CROWD_DEFAULTS, baseDay: { fw: "cwd", otHours: 4 } }).grand;
+    const withoutBase = computeCrowdCosts(model(), { "Main|1": cfg }).grand;
+    expect(withBase).toBe(withoutBase);
   });
 });

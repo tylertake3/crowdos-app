@@ -135,6 +135,7 @@ Rules that matter for costing:
 - CAST: list the cast code numbers called for the scene (e.g. "1", "4", "12") in "cast". Keep code suffixes exactly as printed — "1x", "4v", "2v" are distinct codes (doubles / off-screen variants), never collapse them to the bare number. If the schedule has a cast list mapping codes to character names, fill "castMap".
 - VEHICLES: the count of action/picture vehicles for the scene, else 0.
 - Day "type" is "Night" only if the schedule marks the day/scene as a night shoot, else "Day" (or "" if unknown).
+- Day "loc" is the day's REAL-WORLD shooting location — the physical place/address the unit travels to (e.g. "Barbican, London", "OMAX Studios", "Wenlock Road, N1"). It is usually printed on the day banner or a "LOCATION:" line. It is NEVER a scene's INT/EXT slugline — "INT APARTMENT" or "EXT HOSPITAL" is a set inside a scene heading, not where the unit parks. If the document only gives sluglines and no physical location for a day, leave "loc" as "" rather than copying a slugline.
 - Scene "num" is the scene number/slug exactly as printed (keep letters, e.g. "12A"). "ie" is INT/EXT. "tod" is the scene's time of day.
 - Keep days in schedule order and number them from the schedule ("Day 1", "Shoot Day 3", etc.); if unnumbered, number sequentially from 1.
 - Copy each day's date EXACTLY as printed in the document (e.g. "Wednesday 23rd April 2025") — never reformat it into ISO or any other style.
