@@ -1,9 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Laural",
   description: "Crowd & stunt budgeting and scheduling for UK film and TV",
+};
+
+// Without this the layout viewport falls back to ~980px on phones — the page
+// renders zoomed-out and media queries key off the wrong width. Lock it to the
+// device width so the mobile layout (drawer, reflowed rows, modals) is real.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({

@@ -477,10 +477,8 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 }
 
 @media (max-width:920px){
-  .colhead{display:none}
-  .strip{grid-template-columns:5px 78px 1fr 40px}
-  .strip .ie{display:none}
-  .ccol{grid-column:2/-1;border-left:none;border-top:1px dashed var(--line);flex-direction:row!important;gap:8px;align-items:center!important;flex-wrap:wrap}
+  /* scene-row reflow lives at the END of this file (after the column-visibility
+     rule that re-declares the strip grid) so it isn't overridden */
   .summary{grid-template-columns:1fr 1fr}
   .stat.hero{grid-column:1/-1}
   .controls{position:static}
@@ -514,6 +512,19 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
   .person{font-size:10px;padding:3px 9px}
   th,td{padding:8px 9px}
   table{font-size:11.5px}
+  /* modal headers: title + sub each full-width, action buttons wrap to their
+     own row so "Reset to schedule" + "Close" never run off the edge */
+  .modal .mhead{flex-wrap:wrap;padding:14px 16px;gap:6px 10px}
+  .modal .mhead h3{flex:1 1 100%;font-size:19px;line-height:1.15}
+  .modal .mhead .sub{flex:1 1 100%;order:2}
+  .modal .mhead .x{order:3;margin-left:0!important}
+  .modal .mhead .x:last-child{margin-left:auto!important}
+  /* segmented controls (Day/Night, framework, travel, engagement…) have long
+     labels that clip in a joined pill on a phone — wrap them into rounded
+     chips so every option stays fully readable and tappable */
+  .seg:not(.cards){flex-wrap:wrap;background:none;border:none;overflow:visible;gap:6px;margin-right:0}
+  .seg:not(.cards) button{border:1px solid var(--line2)!important;border-right:1px solid var(--line2)!important;border-radius:8px;flex:1 1 auto;white-space:normal}
+  .seg:not(.cards) button.on{border-color:var(--hv)!important}
   .modal .box{width:97%;max-height:90vh}
   .adjform #adjLabel{min-width:140px}
   .raTop{flex-wrap:wrap;padding:8px 12px}
@@ -574,11 +585,25 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .side-item .del:hover{opacity:1;color:var(--cherry,#ff4d5e)}
 .side-new{margin-top:6px;border-style:dashed;color:var(--sub);text-align:center}
 #srcBar{display:none} /* superseded by the sidebar */
-@media (max-width:960px){
-  .layout{flex-direction:column}
-  .sidebar{position:static;width:100%;max-height:none;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--line)}
-  .side-item{width:auto}
-  .side-label{margin:0 4px}
+#sideScrim{display:none}
+/* ---- mobile / tablet: the sidebar becomes a slide-over drawer, the panel
+   goes full-width. The pagebar toggle (☰) opens it; the scrim closes it. ---- */
+@media (max-width:820px){
+  .layout{display:block;background:var(--panel)}
+  .maincol{margin:0;border:none;border-radius:0;min-height:100vh}
+  .sidebar{position:fixed;top:0;left:0;height:100dvh;width:82vw;max-width:300px;z-index:60;
+    background:var(--panel);border-right:1px solid var(--line);box-shadow:2px 0 24px rgba(0,0,0,.18);
+    transform:translateX(-100%);transition:transform .2s ease;padding:12px}
+  .sidebar:not(.collapsed){transform:none}
+  .sidebar.collapsed{width:82vw;padding:12px} /* keep it sized — it's off-screen, not zero-width, on mobile */
+  .sidebar.collapsed>*{opacity:1;pointer-events:auto}
+  .side-head,.side-grow,.side-foot{display:flex} /* the drawer shows the full sidebar chrome */
+  #sideScrim{display:block;position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.4);
+    opacity:0;pointer-events:none;transition:opacity .2s ease}
+  body.drawer-open #sideScrim{opacity:1;pointer-events:auto}
+  body.drawer-open{overflow:hidden}
+  .pagebar{border-radius:0;position:sticky;top:0}
+  .pagebar .srcbar,.pagebar .tb-btn,.pagebar .crumbs{font-size:12px}
 }
 
 /* ---- dashboard ---- */
@@ -1032,7 +1057,10 @@ body.hide-costs #statusBar .costable{display:none}
 .side-foot-btn{width:30px;height:30px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--sub);
   font-size:13px;display:grid;place-items:center}
 .side-foot-btn:hover{color:var(--ink);background:var(--panel2)}
-@media (max-width:960px){.side-head,.side-grow,.side-foot{display:none}.maincol{margin:0;border-radius:0;border:none}}
+/* 821–960px (small laptops): keep the desktop sidebar but drop the floating
+   panel's outer margin so the content has room. The full drawer treatment is
+   the ≤820px block above. */
+@media (max-width:960px) and (min-width:821px){.maincol{margin:0;border-radius:0;border:none}}
 
 /* unnamed-SA queue — visually distinct from real briefs (work still to do) */
 .anoncard{border-style:dashed;border-color:#d9b978}
@@ -1132,3 +1160,23 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .seg.cards button.on{background:var(--hv);border-color:var(--hv)!important;color:var(--hvink)}
 /* collapsible Calculator header on the dashboard */
 .dash-calchead .chev{color:var(--sub);font-size:15px;display:inline-block;transition:transform .12s;margin-left:4px}
+
+/* ============================================================
+   Mobile scene-row reflow — MUST be last: the column-visibility rule
+   (.colhead,.strip{grid-template-columns:…}) re-declares the strip grid
+   unconditionally, so the responsive override has to come after it to win.
+   ============================================================ */
+@media (max-width:820px){
+  .colhead{display:none}
+  /* rail down the left, everything else stacked full-width in column 2 */
+  .colhead,.strip{grid-template-columns:5px 1fr!important;grid-auto-rows:auto;min-height:0;column-gap:11px;row-gap:0}
+  .strip>div{grid-column:2;padding:5px 0;justify-content:flex-start}
+  .strip .rail{grid-column:1;grid-row:1/-1;padding:0;min-height:46px}
+  .strip .scn{flex-direction:row;gap:8px;align-items:baseline;padding-top:9px;flex-wrap:wrap}
+  .strip .ie{flex-direction:row;gap:6px;color:var(--sub);font-size:12px}
+  .strip .ie small{display:inline}
+  .strip .ccol{border-left:none!important}
+  .strip .ccol .codes{flex-direction:row;flex-wrap:wrap}
+  .strip>div:has(.notebtn){grid-column:1/-1;flex-direction:row;justify-content:flex-end;padding:2px 6px 6px}
+  .strip .notearea,.strip .reqarea{grid-column:1/-1}
+}
