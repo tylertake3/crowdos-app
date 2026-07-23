@@ -104,6 +104,14 @@ body.hide-costs .costable{display:none!important}
 .searchwrap input::placeholder{color:var(--faint)}
 .searchwrap button{border:none;background:none;color:var(--faint);padding:0 10px;font-size:12px;display:none}
 .searchwrap.hasq button{display:block}
+/* "Jump to day…" quick-nav select — same chrome as the search box */
+.dayjump{appearance:none;-webkit-appearance:none;background:var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23999'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border:1px solid var(--line);border-radius:9px;color:var(--sub);cursor:pointer;
+  font-family:inherit;font-size:12.5px;padding:9px 26px 9px 12px;max-width:210px}
+.dayjump:hover{color:var(--ink);background-color:var(--panel2)}
+/* landing flash after a jump — a brief ring so the eye finds the card */
+.daycard.jumpflash{animation:jumpflash 1.7s ease}
+@keyframes jumpflash{0%,55%{box-shadow:0 0 0 2px var(--hv)}100%{box-shadow:0 0 0 0 transparent}}
 .searchwrap button:hover{color:var(--ink)}
 .strip.hit{outline:2px solid var(--hv);outline-offset:-2px}
 .chk input{accent-color:var(--hv)}
@@ -598,9 +606,25 @@ body:not(.light) .t3wordmark{filter:invert(1)}
   .sidebar.collapsed{width:82vw;padding:12px} /* keep it sized — it's off-screen, not zero-width, on mobile */
   .sidebar.collapsed>*{opacity:1;pointer-events:auto}
   .side-head,.side-grow,.side-foot{display:flex} /* the drawer shows the full sidebar chrome */
+  /* explicit close control inside the drawer header — a proper 40px tap target,
+     pushed to the far right of the header row */
+  .side-head{align-items:flex-start}
+  /* .sidebar prefix bumps specificity so this beats the base `.side-head-close
+     {display:none}` rule, which sits LATER in the file (equal specificity would
+     otherwise let the later `display:none` win) */
+  .sidebar .side-head-close{display:grid;place-items:center;margin-left:auto;flex-shrink:0;
+    width:40px;height:40px;margin-top:-6px;margin-right:-4px;border:none;background:none;
+    color:var(--sub);font-size:18px;line-height:1;border-radius:10px}
+  .sidebar .side-head-close:hover,.sidebar .side-head-close:active{color:var(--ink);background:var(--panel2)}
   #sideScrim{display:block;position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.4);
     opacity:0;pointer-events:none;transition:opacity .2s ease}
   body.drawer-open #sideScrim{opacity:1;pointer-events:auto}
+  /* floating ✕ hint in the dimmed area beside the drawer, so the whole scrim
+     reads as tap-to-close (the tap is handled by the scrim itself) */
+  body.drawer-open #sideScrim::after{content:"✕";position:fixed;top:14px;right:16px;
+    width:42px;height:42px;display:grid;place-items:center;border-radius:50%;
+    background:rgba(20,20,22,.55);color:#fff;font-size:17px;
+    border:1px solid rgba(255,255,255,.28);box-shadow:0 2px 12px rgba(0,0,0,.3)}
   body.drawer-open{overflow:hidden}
   .pagebar{border-radius:0;position:sticky;top:0}
   .pagebar .srcbar,.pagebar .tb-btn,.pagebar .crumbs{font-size:12px}
@@ -972,6 +996,8 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 
 /* ---- casting briefs (Laural Briefs styling) ---- */
 .briefcallout{background:var(--notebg);border:1px dashed #8a6a1f66;border-radius:var(--r);padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:var(--note)}
+/* inline SVG icons — 1em squares that ride along with the text they sit in */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-0.14em;flex-shrink:0}
 .briefrow{cursor:pointer}
 .briefwarn{color:#e8a23d;font-weight:600}
 .briefdel{background:none;border:none;color:var(--faint);font-size:13px;padding:4px 8px}
@@ -984,13 +1010,38 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .briefstatus.draft{background-color:var(--panel2);color:var(--sub)}
 .briefstatus.progress{background-color:rgba(232,146,61,.12);border-color:rgba(232,146,61,.4);color:#c07020}
 .briefstatus.complete{background-color:rgba(22,163,74,.1);border-color:rgba(22,163,74,.35);color:var(--good,#16a34a)}
+/* "Sent to agency" badge — same chip language as the status pills; it's a
+   button because clicking it un-marks (a cancelled send shouldn't stay sent) */
+.sentbadge{border-radius:16px;padding:4px 12px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;
+  background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.35);color:var(--hv);white-space:nowrap}
+.sentbadge:hover{background:rgba(37,99,235,.16)}
+/* batch-email tick column */
+.briefselcell{width:34px;text-align:center}
+.briefselcell input{width:16px;height:16px;accent-color:var(--hv);cursor:pointer;vertical-align:middle}
+/* day-card brief badge — traffic-lights how much of the day's casting has
+   actually gone to the agency */
+.dpill.briefpill{cursor:pointer;border:1px solid var(--line2);background:var(--panel);color:var(--sub)}
+.dpill.briefpill.part{border-color:rgba(232,146,61,.5);color:#c07020;background:rgba(232,146,61,.08)}
+.dpill.briefpill.ok{border-color:rgba(22,163,74,.4);color:var(--good,#16a34a);background:rgba(22,163,74,.08)}
+.dpill.briefpill:hover{border-color:var(--hv);color:var(--hv)}
+/* calendar-cell mini badge, same colour language */
+.cal-cell .cbriefs{font-size:9.5px;font-weight:700;margin-top:4px;color:var(--faint)}
+.cal-cell .cbriefs.part{color:#c07020}
+.cal-cell .cbriefs.ok{color:var(--good,#16a34a)}
+/* the day lightbox's brief list */
+.dbriefs{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.dbriefs .sl2{margin-bottom:6px}
+.dbrow{display:flex;align-items:center;gap:8px;padding:5px 0;flex-wrap:wrap}
+.dbrow .dbname{font-size:12.5px;color:var(--ink)}
+.dbrow .dbname small{color:var(--sub);font-size:10.5px;margin-left:2px}
+.dbrow .dbname b{font-family:var(--mono);color:var(--crowd)}
 /* editor page */
 .briefhead{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
 .brieftitle{font-family:var(--cond);font-size:22px;font-weight:600;color:var(--ink);background:none;border:1px solid transparent;border-radius:8px;padding:4px 10px;min-width:200px;flex:0 1 420px}
 .brieftitle:hover,.brieftitle:focus{border-color:var(--line2);background:var(--panel)}
 .briefgrid{display:grid;grid-template-columns:1fr;gap:0}
 .briefform{padding:14px 16px;display:flex;flex-direction:column;gap:14px}
-.bf-row{display:flex;gap:18px;align-items:end;flex-wrap:wrap}
+.bf-row{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap}
 .bf-row label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:500;color:var(--sub)}
 .bf-row input,.bf-row select{background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--ink);padding:8px 10px;font-size:13px;font-family:inherit}
 .bf-block{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:500;color:var(--sub)}
@@ -1052,6 +1103,7 @@ body.hide-costs #statusBar .costable{display:none}
 .side-head-tile{width:30px;height:30px;border-radius:8px;background:#17181a;color:#fff;display:grid;place-items:center;flex-shrink:0}
 .side-head-name{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.2}
 .side-head-name small{display:block;font-family:var(--body);letter-spacing:0;text-transform:none;font-size:10.5px;font-weight:500;color:var(--sub)}
+.side-head-close{display:none} /* only shown inside the mobile drawer (see ≤820px block) */
 .side-grow{flex:1}
 .side-foot{display:flex;gap:6px;padding:10px 2px 2px}
 .side-foot-btn{width:30px;height:30px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--sub);
@@ -1112,8 +1164,11 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .pastdrawer[open]>summary{margin-bottom:12px}
 .pastdrawer[open]>summary::before{transform:rotate(90deg)}
 .pastdrawer .daycard{opacity:.82}
-.cal-cell.todaycell{box-shadow:inset 0 0 0 2px var(--hv)}
-.cal-cell .todaytag{position:absolute;top:4px;left:6px;font-size:8px;font-weight:700;background:var(--hv);color:var(--hvink);border-radius:6px;padding:1px 6px}
+/* today: a hairline ring, and the "Today" pill REPLACES the grey date number
+   top-right — nothing overlaps the D-chip / CWD tags in the cell body */
+.cal-cell.todaycell{box-shadow:inset 0 0 0 1.5px var(--hv)}
+.cal-cell.todaycell .dnumtxt{display:none}
+.cal-cell .todaytag{position:absolute;top:5px;right:8px;font-size:8px;font-weight:700;background:var(--hv);color:var(--hvink);border-radius:6px;padding:2px 7px}
 
 /* crowd chips: unnamed SA reads as work-to-do, named characters read as done */
 .code.cr.anon.click{border:1px dashed #c9a227!important;background:var(--notebg);color:#8a6a1f}
