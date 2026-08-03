@@ -341,7 +341,7 @@ td .daylist{display:flex;gap:4px;flex-wrap:wrap}
 .cdflag{font-size:10px;font-weight:700;border-radius:14px;padding:3px 10px;border:1px solid var(--line2);color:var(--sub)}
 .cdflag.on{background:var(--notebg);border-color:#8a6a1f88;color:var(--note)}
 .chk2{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--sub);cursor:pointer}
-.crowdview-toggle{margin-bottom:12px}
+.crowdview-toggle{margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 /* Characters list as individually-boxed rows, not table lines — each character
    its own visibly-divided card instead of a cramped table row. */
 .charboxwrap{display:flex;flex-direction:column;gap:7px}
@@ -1258,3 +1258,27 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
   .cal-head div{padding:4px 4px;font-size:9px}
   .cal-legend{flex-wrap:wrap;gap:6px 10px;font-size:9.5px}
 }
+
+/* ---- DOOD (day-out-of-days) grid: sticky name column + sticky day header,
+   the matrix scrolls both ways inside its card ---- */
+.doodscroll{overflow:auto;max-height:72vh}
+.doodtable{border-collapse:separate;border-spacing:0;font-size:11px;width:max-content;min-width:100%}
+.doodtable th,.doodtable td{border-bottom:1px solid var(--line);padding:5px 8px;white-space:nowrap}
+.doodtable thead th{position:sticky;top:0;background:var(--panel);z-index:3;text-align:center;font-size:10px;color:var(--sub)}
+.doodtable thead th.dood-name{z-index:4;text-align:left}
+.dood-name{position:sticky;left:0;background:var(--panel);z-index:2;text-align:left;min-width:170px;max-width:240px;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.dood-day small{display:block;font-weight:500;color:var(--faint);font-size:8.5px}
+.dood-day.today b{color:var(--hv)}
+.dood-dh{background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0}
+.dood-dh:hover b{color:var(--hv)}
+.dood-cell{text-align:center;color:var(--sub);min-width:36px;font-family:var(--mono)}
+.dood-cell.w{background:var(--hv-dim);color:var(--ink);font-weight:700}
+.dood-row[data-doodtoggle]{cursor:pointer}
+.dood-row[data-doodtoggle]:hover .dood-name{background:var(--panel2)}
+.dood-chev{display:inline-block;width:15px;color:var(--sub);font-size:9px}
+.dood-slot .dood-name{font-weight:500;color:var(--sub);padding-left:24px}
+.dood-slot .dood-cell.w{background:var(--panel2);color:var(--sub);font-weight:600}
+.dood-un{margin-left:8px;font-size:9px;color:var(--faint);border:1px dashed var(--line2);border-radius:5px;padding:0 5px;vertical-align:1px}
+.dood-more{font-style:italic;color:var(--faint)}
+.dood-total td{border-top:2px solid var(--line2);font-weight:700;position:sticky;bottom:0;background:var(--panel)}
+.dood-total td.dood-name{z-index:3}
