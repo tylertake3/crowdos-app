@@ -6,6 +6,8 @@ import type {
   CharacterRow,
   CrowdDayConfig,
   CrowdTier,
+  NamedCount,
+  ReqTier,
   ScheduleModel,
   ShootDay,
   TravelBand,
@@ -61,6 +63,68 @@ export const CROWD_DEFAULTS: CrowdSettings = {
 export function tierFwHours(c: CrowdDayConfig, tier: CrowdTier): number {
   if (tier === "SPACT") return spactFrameworkHours(c.fw);
   return pactFrameworkHours(c.fw);
+}
+
+// ---------------------------------------------------------------------------
+// Breakdown-import tolerance.
+//
+// An imported Crowd Breakdown puts things in the crowd columns that must not
+// be priced by the crowd engine: dummies and dogs (not people), action
+// vehicles, children, and stunts (explicitly "NOT A PART OF THE CROWD
+// BUDGET"). They are imported so that the document's own totals reconcile and
+// nothing is silently dropped — dropping them would make an imported
+// breakdown irreconcilable — but they never reach a rate card.
+//
+// A row with no metadata is costable, which is why every pre-existing
+// schedule-parsed row behaves exactly as before.
+// ---------------------------------------------------------------------------
+const COSTING_TIERS: readonly ReqTier[] = ["SA", "Featured", "SPACT"];
+
+export function costableReq(r: NamedCount): boolean {
+  if ((r.unitType ?? "person") !== "person") return false; // dummies, dogs, cars
+  if (r.budgetScope === "reference") return false; //          out of crowd budget
+  if (r.tier && !COSTING_TIERS.includes(r.tier)) return false; // Stunt/Child/AV
+  return true;
+}
+
+// The tier a row is actually priced on.
+//
+// "TBC whether Spact or SA" is real and common. Locked decision: cost at the
+// HIGHER candidate rate, so resolving the tier can only ever move the budget
+// DOWN. The winner is computed from the live rate card rather than assumed,
+// because the cards are editable — we compare each candidate's flat per-head
+// on a neutral day and take the max.
+export function effectiveTier(
+  r: NamedCount,
+  fallback: CrowdTier,
+  s: CrowdSettings = CROWD_DEFAULTS
+): CrowdTier {
+  const declared = (r.tier && COSTING_TIERS.includes(r.tier) ? r.tier : fallback) as CrowdTier;
+  if (!r.tierTbc) return declared;
+  const cands = (r.tierCandidates ?? [declared, "SPACT"]).filter((t): t is CrowdTier =>
+    COSTING_TIERS.includes(t)
+  );
+  if (!cands.length) return declared;
+  const neutral: CrowdDayConfig = {
+    shift: "Day",
+    fw: "cwd",
+    ph: false,
+    call: "07:00",
+    wrap: "18:00",
+    travel: "A",
+    chars: [],
+  };
+  let best = cands[0];
+  let bestPer = -Infinity;
+  for (const t of cands) {
+    // supplementary fees are added by the caller's per-head path, not here
+    const per = cdPerHead(neutral, t, s).per;
+    if (per > bestPer) {
+      bestPer = per;
+      best = t;
+    }
+  }
+  return best;
 }
 
 // The single per-head entry point — dispatches to the right rate card.
@@ -220,12 +284,24 @@ export function computeCrowdCosts(
     const spacts: Record<string, number> = {};
     const saChars: Record<string, number> = {}; // named SA groups
     for (const sc of d.scenes) {
-      for (const f of sc.saChars || [])
-        saChars[f.name] = Math.max(saChars[f.name] || 0, f.count);
-      for (const f of sc.featured || [])
-        feats[f.name] = Math.max(feats[f.name] || 0, f.count);
-      for (const f of sc.spacts || [])
-        spacts[f.name] = Math.max(spacts[f.name] || 0, f.count);
+      // weather-cover scenes are deliberately double-scheduled by some
+      // productions — they must not add to the day's requirement
+      if (sc.status === "weatherCover") continue;
+      // An imported row can be a dummy, a dog, a child or a stunt sitting in a
+      // crowd column; costableReq keeps those out of every bucket. A row whose
+      // tier is TBC is bucketed on its effective (higher-rate) tier, so the
+      // budget can only fall when the AD resolves it.
+      const bucket = (f: NamedCount, fallback: CrowdTier) => {
+        if (!costableReq(f)) return;
+        const t = effectiveTier(f, fallback, s);
+        const into = t === "SPACT" ? spacts : t === "Featured" ? feats : saChars;
+        into[f.name] = Math.max(into[f.name] || 0, f.count);
+      };
+      for (const f of sc.saChars || []) bucket(f, "SA");
+      for (const f of sc.featured || []) bucket(f, "Featured");
+      for (const f of sc.spacts || []) bucket(f, "SPACT");
+      // children and action vehicles are reference-only by construction and
+      // never enter any costing bucket (see types.ts)
     }
     // named SAs count in the SA bucket at the SA rate (a character name does
     // not make someone Featured — Featured is a rare SA + supplementary fees)
@@ -238,7 +314,10 @@ export function computeCrowdCosts(
     if (!c && !sa && !featPD && !spactPD) continue;
 
     let entry: CrowdDayEntry;
-    if (c) {
+    // A merely-seeded config (calculator opened, nothing changed) is ignored for
+    // costing — see CrowdDayConfig.seeded. Legacy configs have no flag and so
+    // still take this branch.
+    if (c && !c.seeded) {
       const r = cdDayCost(c, s);
       if (!r.sa && !r.featPD && !r.spactPD) continue;
       const tAmt =
