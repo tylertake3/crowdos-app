@@ -6,14 +6,29 @@ const MONTHS: Record<string, number> = {
   january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
   july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
 };
+// Call sheets write months every which way: "April", "APRIL", "Apr", "Sept.".
+// Full names win; a 3–5 letter word is accepted as an abbreviation, which keeps
+// ordinary words ("Marketing") from being read as a month.
+function monthNum(word: string): number | null {
+  const w = word.toLowerCase().replace(/\.$/, "");
+  if (MONTHS[w] != null) return MONTHS[w];
+  if (w.length < 3 || w.length > 5) return null;
+  for (const name of Object.keys(MONTHS))
+    if (name.startsWith(w)) return MONTHS[name];
+  return null;
+}
 
+// NOTE: the /i flags matter. Schedules routinely shout their dates
+// ("MONDAY 14TH APRIL"), and a case-sensitive ordinal suffix left every such
+// day with a null _date — which silently broke date sorting, week grouping,
+// continuity and the calendar for that production.
 export function parseDayDate(d: Pick<ShootDay, "date">): Date | null {
-  let m = d.date.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?/);
-  if (m && MONTHS[m[2].toLowerCase()] != null)
-    return new Date(+(m[3] || 2026), MONTHS[m[2].toLowerCase()], +m[1]);
-  m = d.date.match(/([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})?/);
-  if (m && MONTHS[m[1].toLowerCase()] != null)
-    return new Date(+(m[3] || 2026), MONTHS[m[1].toLowerCase()], +m[2]);
+  let m = d.date.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z.]+)(?:\s+(\d{4}))?/i);
+  let mo = m && monthNum(m[2]);
+  if (m && mo != null) return new Date(+(m[3] || 2026), mo, +m[1]);
+  m = d.date.match(/([A-Za-z.]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i);
+  mo = m && monthNum(m[1]);
+  if (m && mo != null) return new Date(+(m[3] || 2026), mo, +m[2]);
   return null;
 }
 

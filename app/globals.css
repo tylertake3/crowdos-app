@@ -1009,8 +1009,10 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .tb-btn.briefprimary{background:var(--hv);border-color:var(--hv);color:var(--hvink);font-weight:600}
 /* status pill — a select styled like Laural's status chips */
 .briefstatus{appearance:none;-webkit-appearance:none;border-radius:16px;padding:4px 22px 4px 12px;font-size:11.5px;font-weight:600;
-  border:1px solid var(--line2);cursor:pointer;font-family:inherit;
+  border:1px solid var(--line2);cursor:pointer;font-family:inherit;white-space:nowrap;line-height:1.4;
   background:var(--panel2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23999'/%3E%3C/svg%3E") no-repeat right 9px center;color:var(--sub)}
+/* the read-only version (a span, not a select) — no caret, no pointer */
+span.briefstatus{background-image:none;padding-right:12px;cursor:default;display:inline-block}
 .briefstatus.draft{background-color:var(--panel2);color:var(--sub)}
 .briefstatus.progress{background-color:rgba(232,146,61,.12);border-color:rgba(232,146,61,.4);color:#c07020}
 .briefstatus.complete{background-color:rgba(22,163,74,.1);border-color:rgba(22,163,74,.35);color:var(--good,#16a34a)}
@@ -1019,6 +1021,14 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .sentbadge{border-radius:16px;padding:4px 12px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;
   background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.35);color:var(--hv);white-space:nowrap}
 .sentbadge:hover{background:rgba(37,99,235,.16)}
+/* column rhythm — the status pill and the row actions must never wrap, and
+   the character name gets the slack instead */
+.statuscol{white-space:nowrap;min-width:130px}
+.statuscol .sentbadge{margin-left:6px}
+.actioncol{width:44px}
+.briefs-tbl td.rowlabel{min-width:180px;max-width:340px}
+.newtag{font-weight:500;font-size:10.5px;color:var(--faint);border:1px solid var(--line2);border-radius:5px;
+  padding:1px 6px;margin-left:6px;white-space:nowrap;vertical-align:1px}
 /* batch-email tick column */
 .briefselcell{width:34px;text-align:center}
 .briefselcell input{width:16px;height:16px;accent-color:var(--hv);cursor:pointer;vertical-align:middle}
@@ -1062,6 +1072,7 @@ body:not(.light) .t3wordmark{filter:invert(1)}
   padding:7px 10px;font-size:12.5px;font-family:inherit}
 .bf-daterange{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}
 .bf-dates .bf-clear{margin-left:auto}
+@media (max-width:640px){.bf-dates .bf-clear{margin-left:0}}
 /* the booking tally — days × heads, the line both sides check first */
 .bf-tally{margin-top:8px;font-size:12.5px;color:var(--sub)}
 .bf-tally b{color:var(--ink);font-weight:700}
