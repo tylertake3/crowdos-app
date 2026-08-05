@@ -1052,6 +1052,40 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .bf-block textarea{width:100%;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--ink);
   font-family:inherit;font-size:13px;padding:10px 12px;resize:vertical;min-height:64px;line-height:1.5}
 .bf-block textarea::placeholder{color:var(--faint)}
+/* dates a brief carries itself — for characters not (yet) on the schedule */
+.bf-dates{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.bf-dates .datechip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line2);
+  border-radius:999px;padding:5px 6px 5px 11px;font-size:12px;font-weight:600;color:var(--ink)}
+.bf-dates .datechip button{background:none;border:none;color:var(--faint);font-size:11px;line-height:1;padding:3px 5px;border-radius:999px}
+.bf-dates .datechip button:hover{background:var(--line2);color:var(--ink)}
+.bf-dateadd{background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--ink);
+  padding:7px 10px;font-size:12.5px;font-family:inherit}
+.bf-daterange{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}
+.bf-dates .bf-clear{margin-left:auto}
+/* the booking tally — days × heads, the line both sides check first */
+.bf-tally{margin-top:8px;font-size:12.5px;color:var(--sub)}
+.bf-tally b{color:var(--ink);font-weight:700}
+/* free text on a bf-block (attributes) matches the textareas around it */
+.bf-block>input{width:100%;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--ink);
+  font-family:inherit;font-size:13px;padding:9px 12px}
+.bf-block>input::placeholder{color:var(--faint)}
+/* toggle chips — gender, look restrictions */
+.bf-chips{display:flex;flex-wrap:wrap;gap:7px}
+.tagchip{background:var(--panel);border:1px solid var(--line2);border-radius:999px;color:var(--sub);
+  font-family:inherit;font-size:12px;font-weight:600;padding:6px 12px}
+.tagchip:hover{border-color:var(--hv);color:var(--hv)}
+.tagchip.on{background:var(--ink);border-color:var(--ink);color:var(--bg,#fff)}
+.tagchip.on:hover{opacity:.86;color:var(--bg,#fff)}
+/* reference photos */
+.bf-photos{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.bf-photo{position:relative;display:inline-block;line-height:0}
+.bf-photo img{width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line2)}
+.bf-photo button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:999px;border:1px solid var(--line2);
+  background:var(--card,var(--panel));color:var(--sub);font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.bf-photo button:hover{color:var(--ink);border-color:var(--hv)}
+.bf-photoadd{width:92px;height:92px;border-radius:10px;border:1px dashed var(--line2);background:var(--panel);
+  color:var(--sub);font-size:11.5px;font-weight:600;font-family:inherit;padding:6px;line-height:1.35}
+.bf-photoadd:hover{border-color:var(--hv);color:var(--hv)}
 
 /* ---- Laural chrome: breadcrumbs, floating action bar, gate, accent pills ---- */
 .crumbs{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--sub);min-width:0;overflow:hidden;white-space:nowrap}
