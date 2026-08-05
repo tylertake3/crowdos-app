@@ -299,3 +299,47 @@ describe("P0-1 — a seeded day config never changes cost", () => {
     expect(r.perDay["M1"].edited).toBe(true);
   });
 });
+
+describe("half-named crowd: the same group named on one scene only", () => {
+  // The trap the day board now flags. A day's SA requirement is the anonymous
+  // peak PLUS each named group's peak — right for two different groups, wrong
+  // when ONE group is named in one scene and left as plain "N SA" in the rest.
+  // These pin the arithmetic both ways so the UI's "counted twice" warning and
+  // its one-click fix stay honest.
+  const named = (n: number) => [{ name: "Commuters", count: n }];
+
+  it("names on every scene: the day counts one group", () => {
+    const m = model([
+      day([
+        scene({ num: "1", saChars: named(300) }),
+        scene({ num: "2", saChars: named(300) }),
+      ]),
+    ]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].sa).toBe(300);
+  });
+
+  it("named on one scene, anonymous on another: the SAME people count twice", () => {
+    const m = model([
+      day([
+        scene({ num: "1", saChars: named(300) }),
+        scene({ num: "2", sa: 300 }),
+      ]),
+    ]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].sa).toBe(600);
+  });
+
+  it("two genuinely different groups still add up", () => {
+    const m = model([
+      day([
+        scene({ num: "1", saChars: [{ name: "Nurses", count: 5 }] }),
+        scene({ num: "2", saChars: [{ name: "Doctors", count: 3 }] }),
+      ]),
+    ]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].sa).toBe(8);
+  });
+
+  it("the engine reports named groups per day, which is what the day calculator seeds from", () => {
+    const m = model([day([scene({ num: "1", saChars: named(300) })])]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].saChars).toEqual({ Commuters: 300 });
+  });
+});
