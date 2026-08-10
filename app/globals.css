@@ -805,7 +805,65 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .rp-rev label{font-family:var(--cond);font-size:11px;color:var(--faint)}
 .rp-rev input{width:104px;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;color:var(--ink);
   font-family:var(--mono);font-size:13px;font-weight:600;padding:7px 10px}
-.rp-body{overflow:auto;padding:14px 20px;display:flex;flex-direction:column;gap:12px}
+.rp-body{overflow:auto;padding:14px 20px;display:flex;flex-direction:column;gap:12px;flex:1 1 auto;min-width:0;min-height:0}
+/* ---- review page: side-by-side original document viewer ---- */
+.rp-split{flex:1 1 auto;min-height:0;display:flex}
+.revpage.has-viewer:not(.viewer-hidden) .rp-sheet{width:min(1400px,96vw)}
+.rp-head .rp-vtoggle{font-family:var(--cond);font-size:11px;padding:6px 11px}
+.rp-divider{flex:none;width:7px;cursor:col-resize;background:var(--line);position:relative}
+.rp-divider:hover{background:var(--hv-line)}
+.rp-viewer{flex:none;width:46%;min-width:240px;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line);min-height:0}
+.rpv-bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+.rpv-tabs{display:flex;gap:6px;flex-wrap:wrap;min-width:0;overflow:hidden}
+.rpv-tab{font-family:var(--cond);font-size:11px;color:var(--sub);background:var(--panel2);border:1px solid var(--line2);
+  border-radius:7px;padding:5px 10px;white-space:nowrap}
+.rpv-tab.on{color:var(--hv);border-color:var(--hv-line);background:var(--hv-dim)}
+.rpv-ctl{margin-left:auto;display:flex;gap:4px;flex:none}
+.rpv-btn{font-family:var(--cond);font-size:13px;line-height:1;min-width:30px;color:var(--ink);background:var(--panel2);
+  border:1px solid var(--line2);border-radius:7px;padding:6px 9px}
+.rpv-btn:hover{border-color:var(--hv-line);color:var(--hv)}
+.rpv-pages{flex:1 1 auto;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;align-items:center;
+  gap:12px;background:var(--panel2)}
+/* flex:none is essential — .rpv-pages is a flex column, so without it the
+   browser shrinks every page holder to its min-height to fit the column,
+   clipping each rendered page to a thin blank strip (looked like blank pages) */
+.rpv-page{width:100%;flex:none;display:flex;justify-content:center;min-height:40px}
+.rpv-page canvas,.rpv-img{max-width:100%;border:1px solid var(--line2);border-radius:4px;
+  box-shadow:0 2px 10px rgba(0,0,0,.28);background:#fff}
+.rpv-img{display:block;flex:none}
+.rpv-loading{color:var(--sub);font-size:12px;font-family:var(--mono);padding:24px 12px;text-align:center;max-width:340px}
+/* find-in-original: the highlight drawn over the matched line */
+.rpv-page{position:relative}
+.rpv-hl{position:absolute;pointer-events:none;border-radius:3px;background:rgba(255,197,61,.34);
+  box-shadow:0 0 0 2px rgba(255,197,61,.9);animation:rpvpulse 1.1s ease-out 2}
+@keyframes rpvpulse{0%{background:rgba(255,197,61,.62)}100%{background:rgba(255,197,61,.34)}}
+/* rows/quotes you can click to follow along in the original */
+.rp-tbl.followable tbody tr{cursor:pointer}
+.rp-tbl.followable tbody tr:hover{background:var(--panel2)}
+.rp-tbl tbody tr.hl{background:rgba(255,197,61,.1);box-shadow:inset 3px 0 0 var(--dayext)}
+.qsrc.findable{cursor:pointer}
+.qsrc.findable:hover{border-color:var(--hv-line);color:var(--hv)}
+.revpage.viewer-hidden .rp-viewer,.revpage.viewer-hidden .rp-divider{display:none!important}
+/* standalone original-document viewer (opened from the schedule list) */
+.origmodal .orig-sheet{background:var(--bg);border:1px solid var(--line2);border-radius:14px;width:min(1000px,94vw);
+  height:min(92vh,1100px);display:flex;flex-direction:column;overflow:hidden}
+.orig-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.orig-head h3{font-family:var(--cond);font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.orig-head .x{margin-left:auto}
+.orig-viewer{flex:1 1 auto;min-height:0;width:auto;border-left:none;background:var(--panel)}
+/* the "View original" action in the schedule list — always visible, sits just
+   left of the delete ✕ (its margin-left:auto pushes the pair to the right) */
+.side-item.sched .vieworig{display:inline-flex;align-items:center;justify-content:center;color:var(--faint);flex:none;
+  width:20px;height:20px;border-radius:5px;margin-left:auto;opacity:.55}
+.side-item.sched .vieworig+.del{margin-left:2px}
+.side-item.sched .vieworig .ic{width:13px;height:13px}
+.side-item.sched .vieworig:hover{color:var(--hv);background:var(--hv-dim);opacity:1}
+@media(max-width:900px){
+  .rp-split{flex-direction:column}
+  .revpage.has-viewer:not(.viewer-hidden) .rp-sheet{width:min(960px,94vw)}
+  .rp-viewer{width:auto!important;border-left:none;border-top:1px solid var(--line);height:46vh}
+  .rp-divider{display:none!important}
+}
 .rp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .rp-stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 13px}
 .rp-stat .n{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
