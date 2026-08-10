@@ -57,6 +57,16 @@ export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleM
     d.unit = unit;
     d.id = (unit === "2nd" ? "U" : "M") + d.num;
     d._date = parseDayDate(d);
+    // Most Full Fat schedules state no day-level location — the set only
+    // appears in each scene's slugline. parseExpanded already falls back to
+    // the first scene's set; do it here too so an AI-read model (which
+    // routinely returns days with no `loc`) is filled in the same way,
+    // instead of showing a board full of blank locations. Travel-band
+    // auto-detect reads this field, so a blank costs real money.
+    if (!(d.loc || "").trim()) {
+      const slug = d.scenes?.find((s) => (s.slug || "").trim())?.slug;
+      if (slug) d.loc = slug;
+    }
     if (/^studio$/i.test((d.loc || "").trim())) d.loc = "OMAX Studio";
   }
   model.multiUnit = false;
