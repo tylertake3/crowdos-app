@@ -181,7 +181,22 @@ export interface ShootDay {
   // diff them. A non-zero delta is not a parser failure — real breakdowns
   // contain arithmetic errors, and surfacing them is the point.
   declaredTotals?: Partial<Record<ReqTier, number>>;
+  // Distinct scene-location banners on this day, in the order they appear.
+  // Each is one "location block": the fictional/scene place exactly as the
+  // schedule states it (e.g. "FOUR SEASONS HOTEL MOROCCO"), plus the index of
+  // the first scene that falls under it. A day that moves between two sets
+  // carries two blocks. Set by prepModel; a day with a single banner collapses
+  // to one block equal to `loc`. The block's `loc` text is the SCENE location
+  // and is never overwritten — the real shooting location is held separately.
+  locBlocks?: LocBlock[];
   unparsed?: string[];
+}
+
+export interface LocBlock {
+  // Scene-location text, verbatim from the schedule (the story-side place).
+  loc: string;
+  // Index into `scenes` of the first scene under this banner.
+  from: number;
 }
 
 export interface ScheduleNote {
