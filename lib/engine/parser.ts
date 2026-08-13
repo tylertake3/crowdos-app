@@ -29,6 +29,18 @@ const RX = {
     /^(Move(?:\s+(?:Set|Downstairs|Upstairs))?|Set Move|Trolley Push\??|Drone(?:\s+U\s*Crane)?|U Crane|Array|Low Loader|Pod|Green Screen|Travel (?:To|From) .+)$/i,
 };
 
+// Record a scene-location banner as a distinct block on the day. Blank banners
+// and consecutive repeats are ignored; `from` is the index of the next scene,
+// so scenes are grouped under the banner in force when they were read.
+function pushLoc(day: ShootDay, loc: string): void {
+  const v = (loc || "").trim();
+  if (!v) return;
+  const blocks = (day.locBlocks = day.locBlocks || []);
+  const last = blocks[blocks.length - 1];
+  if (last && last.loc === v) return;
+  blocks.push({ loc: v, from: day.scenes.length });
+}
+
 export function classifyToken(t: string): CastToken | null {
   const tok = t.trim();
   if (!tok) return null;
@@ -111,10 +123,14 @@ export function parseSchedule(text: string): ScheduleModel {
       if (day) { day.pages = m[3].trim(); days.push(day); day = null; }
       continue;
     }
-    if (day && !day.loc && (m = ln.match(RX.loc))) {
-      day.loc = m[1].replace(/-+$/, "").trim();
-      day.hours = m[2] + "–" + m[3];
-      day.type = m[4] || "";
+    if (day && (m = ln.match(RX.loc))) {
+      const locTxt = m[1].replace(/-+$/, "").trim();
+      pushLoc(day, locTxt);
+      if (!day.loc) {
+        day.loc = locTxt;
+        day.hours = m[2] + "–" + m[3];
+        day.type = m[4] || "";
+      }
       continue;
     }
     if (day && (m = ln.match(RX.cameras))) { day.cams = m[1]; continue; }
@@ -540,6 +556,7 @@ export function parseExpanded(text: string): ScheduleModel {
     }
     if ((m = ln.match(/^==\s*(.+?)\s*==$/))) {
       pendingSection = m[1].trim();
+      if (day && !/HIATUS|Rest Day/i.test(pendingSection)) pushLoc(day, pendingSection);
       if (day && !day.loc) day.loc = pendingSection;
       if (!day && /HIATUS|Rest Day/i.test(m[1]))
         notes.push({

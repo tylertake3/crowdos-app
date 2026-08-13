@@ -10,6 +10,7 @@
 // the import dialog before anything is saved. See RATE-ENGINE-NOTES.md.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { normalize } from "@/lib/engine/ai-normalize";
 
 export const runtime = "nodejs";
 export const maxDuration = 300; // big schedules are read in several chunks (see below)
@@ -32,6 +33,35 @@ const SCHEMA = {
           loc: { type: "string" },
           type: { type: "string" }, // "Day" | "Night" | ""
           hours: { type: "string" },
+          // Day-level crowd/stunt totals the schedule states for the WHOLE day
+          // (e.g. a footer line "Extras x 48: Stunts x 6") without tying them to
+          // any one scene. Same shape as a scene's background/stunts. Empty when
+          // every count is already itemised per scene.
+          background: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                tier: { type: "string", enum: ["SA", "SPACT", "Featured"] },
+                name: { type: "string" },
+                count: { type: "integer" },
+              },
+              required: ["tier", "name", "count"],
+            },
+          },
+          stunts: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                name: { type: "string" },
+                count: { type: "integer" },
+              },
+              required: ["name", "count"],
+            },
+          },
           scenes: {
             type: "array",
             items: {
@@ -79,7 +109,7 @@ const SCHEMA = {
             },
           },
         },
-        required: ["num", "date", "loc", "type", "hours", "scenes"],
+        required: ["num", "date", "loc", "type", "hours", "background", "stunts", "scenes"],
       },
     },
     castMap: {
@@ -123,6 +153,7 @@ Rules that matter for costing:
   - "Featured" = ONLY groups the schedule explicitly files under "Featured Background Actors" or "Featured Extras". Nothing else is Featured.
 - CATEGORY ABBREVIATIONS mean the same thing in any layout: "E:" / "Extras" / "Background" are the SA tier (a scene row carrying "E: 26" has 26 SA; a Full Fat block "Extras: Prisoners (20), Prison Guards (6)" is two named SA groups). "FE:" / "Featured Extras" are the Featured tier ("FE: 1" = 1 Featured; NAMED entries under a "Featured Extras" heading are Featured, count 1 each unless a number is printed). "ST:" is a stunt count ("ST: 1" = 1 stunt performer in that scene's "stunts").
 - Put each background group in the "background" array with its tier, its group name ("" if it is just anonymous crowd like "50 SA"), and its head count. Do NOT invent counts — only use numbers printed in the schedule.
+- DAY-LEVEL CROWD/STUNT TOTALS: a schedule often prints a single crowd or stunt total for the WHOLE shoot day rather than per scene — usually on the day banner or a footer line beneath the day's scenes, e.g. "Extras x 48: Stunts x 6", "Crowd: 48", "SA x 48", "Extras x 48 : Stunts x 6". When a total is stated at the DAY level and is NOT attributed to a particular scene, put it in the DAY object's own "background"/"stunts" arrays (same shape as a scene's), and do NOT copy it into any single scene. Use a scene's own "background"/"stunts" only for counts the schedule ties to that specific scene number. If the same figure is clearly both a day footer total AND already itemised on the individual scenes, prefer the per-scene placement and leave the day-level arrays empty. Never double-count — a figure belongs either to the day total or to specific scenes, not both.
 - STUNTS go in the "stunts" array, NOT "background". Only count people the schedule explicitly labels as stunt performers, stunt doubles, or stunt coordinators (or lists under a "Stunts"/"Stunt Performers" heading). A crowd/SA/SPACT role that merely sounds physical (police, soldiers, protesters) is NOT a stunt unless the schedule says so.
 - IGNORE ENTIRELY: Props, Weapons, Additional Labor/Labour, Special Effects, SFX, VFX, "SQ:" sequence tags, "Q's:", camera/grip notes, wardrobe, make-up/hair, Home Economist. Nothing from those blocks may ever appear in cast, stunts, background, or any text field — a zip gun is a prop, an armourer is labour, neither is a person in the schedule's cast or crowd.
 - GRID/BOX one-liners often split the scene number across cells — an episode number then a scene number ("8 | 18"). Join them as printed ("8 18"). Script-day numbers ("DAY 33") and page counts ("1/8pgs") are NOT scene numbers, locations, or descriptions. Never let leftover grid tokens (e.g. "33 1/8pgs FE :") leak into "desc" or the location — "desc" is the action sentence, the location is the location line.
@@ -171,7 +202,6 @@ async function verifyUser(req: Request): Promise<string | null> {
     return null;
   }
 }
-
 // Basic per-user rate limit: 30 AI reads per hour (a pair upload uses 2).
 // In-memory, so it resets when the serverless instance recycles — a speed
 // bump against abuse, not a hard quota. Auth above is the real gate.
@@ -212,10 +242,14 @@ export async function POST(req: Request) {
   }
 
   let text = "", glossary: any[] = [], images: { media_type: string; data: string }[] = [];
+  let feedback = "";
   try {
     const body = await req.json();
     text = typeof body.text === "string" ? body.text : "";
     glossary = Array.isArray(body.glossary) ? body.glossary : [];
+    // A user "re-check" note — plain-English correction from the review screen
+    // (e.g. "you missed the cast numbers"). Rides ahead of every chunk.
+    feedback = typeof body.feedback === "string" ? body.feedback.slice(0, 800) : "";
     // Photographed schedule pages — base64 JPEG/PNG/WebP, client-downscaled.
     if (Array.isArray(body.images)) {
       const okType = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -246,9 +280,16 @@ export async function POST(req: Request) {
     .filter((g) => g && typeof g.term === "string" && typeof g.answer === "string" && g.term.trim())
     .slice(0, 200)
     .map((g) => `  ${g.term.trim()} = ${g.answer.trim()}`);
-  const prefix = glossLines.length
-    ? "GLOSSARY (user-defined schedule terms — apply silently, never ask about these):\n" + glossLines.join("\n") + "\n\nSCHEDULE TEXT:\n"
+  // A re-check note is a strong correction: the model already read this
+  // schedule once and got something wrong. Put it first so it shapes the whole read.
+  const fbBlock = feedback.trim()
+    ? "REVIEWER CORRECTION — a previous automated reading of THIS schedule was wrong. The user reports:\n  \"" +
+      feedback.trim() +
+      "\"\nRe-read the schedule carefully and fix this. Make sure EVERY scene's cast numbers, background/crowd counts and stunt counts are captured. Return the FULL corrected schedule, not just the changed part.\n\n"
     : "";
+  const prefix = fbBlock + (glossLines.length
+    ? "GLOSSARY (user-defined schedule terms — apply silently, never ask about these):\n" + glossLines.join("\n") + "\n\nSCHEDULE TEXT:\n"
+    : "");
 
   const client = new Anthropic({ apiKey });
   // Images (photographed pages) go as ONE vision read — pages belong
@@ -435,6 +476,10 @@ function mergeRawDays(days: any[]): any[] {
           seen.add(n);
         }
       }
+      // A day-level total (e.g. "Extras x 48: Stunts x 6") may sit in whichever
+      // chunk held the day's footer — keep it if the first chunk had none.
+      if (!(existing.background || []).length && (d?.background || []).length) existing.background = d.background;
+      if (!(existing.stunts || []).length && (d?.stunts || []).length) existing.stunts = d.stunts;
     } else {
       const day = { ...d, scenes: [...(d?.scenes || [])] };
       if (date) byDate.set(date, day);
@@ -442,102 +487,4 @@ function mergeRawDays(days: any[]): any[] {
     }
   }
   return out;
-}
-
-// Turn the AI's compact answer into a full ScheduleModel the engine can cost.
-// Every background head goes through saChars/spacts/featured; scene.sa stays 0.
-function normalize(raw: any) {
-  const days = (Array.isArray(raw?.days) ? raw.days : []).map((d: any) => {
-    const scenes = (Array.isArray(d?.scenes) ? d.scenes : []).map((sc: any) => {
-      const bg = Array.isArray(sc?.background) ? sc.background : [];
-      const saChars: { name: string; count: number }[] = [];
-      const spacts: { name: string; count: number }[] = [];
-      const featured: { name: string; count: number }[] = [];
-      for (const g of bg) {
-        const count = Math.max(0, Math.round(Number(g?.count) || 0));
-        if (!count) continue;
-        // Anonymous SA collapses into one peaked bucket ("SA"), matching the
-        // regex parser's treatment of unnamed background; named groups keep
-        // their names and sum.
-        const tier = g?.tier === "SPACT" ? "SPACT" : g?.tier === "Featured" ? "Featured" : "SA";
-        const name = String(g?.name || "").trim();
-        const entry = { name: tier === "SA" ? (name || "SA") : name, count };
-        if (tier === "SPACT") spacts.push(entry);
-        else if (tier === "Featured") featured.push(entry);
-        else saChars.push(entry);
-      }
-      const stunts = (Array.isArray(sc?.stunts) ? sc.stunts : [])
-        .map((s: any) => ({ name: String(s?.name || "").trim(), count: Math.max(0, Math.round(Number(s?.count) || 0)) }))
-        .filter((s: any) => s.count);
-      // Deterministic guards, independent of the model's judgement.
-      // 1) Category labels and prop/effects headings are never people — strip
-      //    them wherever the model filed them ("Weapons", "DAY", "Featured
-      //    Extras" showing up as stunt chips was a real leak).
-      const LABEL_JUNK = /^(day|night|dawn|dusk|weapons?|props?|extras?|featured extras?|background(?: actors?)?|stunts?|stand.?ins?|vfx|sfx|special effects|additional labou?r|notes?|q'?s?|cast|vehicles?|wardrobe|make-?up(?:\/hair)?)\s*:?$/i;
-      for (const arr of [saChars, spacts, featured, stunts]) {
-        for (let i = arr.length - 1; i >= 0; i--) {
-          if (LABEL_JUNK.test(arr[i].name.trim())) arr.splice(i, 1);
-        }
-      }
-      // 2) Anything NAMED like a stunt ("Maia Running/Stunt Double") costs as
-      //    stunts, never as crowd — and a crowd-named entry the model filed
-      //    under stunts (a picture/child double, a stand-in) comes back to SA.
-      for (const arr of [saChars, spacts, featured]) {
-        for (let i = arr.length - 1; i >= 0; i--) {
-          if (/stunt/i.test(arr[i].name)) { stunts.push(arr[i]); arr.splice(i, 1); }
-        }
-      }
-      for (let i = stunts.length - 1; i >= 0; i--) {
-        const n = stunts[i].name;
-        if (n && !/stunt/i.test(n) && /stand.?in|double/i.test(n)) { saChars.push(stunts[i]); stunts.splice(i, 1); }
-      }
-      const cast = (Array.isArray(sc?.cast) ? sc.cast : [])
-        .map((c: any) => ({ code: String(c || "").trim(), type: "cast" as const }))
-        .filter((c: any) => c.code);
-      return {
-        num: String(sc?.num || "").trim(),
-        part: "",
-        ie: String(sc?.ie || "").trim(),
-        slug: String(sc?.desc || "").trim(),
-        tod: String(sc?.tod || "").trim(),
-        scriptDay: String(sc?.scriptDay || "").trim(),
-        pages: String(sc?.pages || "").trim(),
-        unit: "Main",
-        desc: String(sc?.desc || "").trim(),
-        sa: 0,
-        veh: Math.max(0, Math.round(Number(sc?.vehicles) || 0)),
-        pod: false,
-        podVeh: 0,
-        cast,
-        extras: stunts,
-        spacts,
-        saChars,
-        featured,
-        vehNames: [],
-        tags: [],
-      };
-    });
-    return {
-      num: Math.max(0, Math.round(Number(d?.num) || 0)),
-      date: String(d?.date || "").trim(),
-      sr: "",
-      ss: "",
-      loc: String(d?.loc || "").trim(),
-      hours: String(d?.hours || "").trim(),
-      type: /night/i.test(String(d?.type || "")) ? "Night" : String(d?.type || "").trim(),
-      cams: "",
-      scenes,
-      pages: "",
-    };
-  }).filter((d: any) => d.scenes.length || d.num)
-    .map((d: any, i: number) => ({ ...d, num: i + 1 })); // sequential across merged chunks
-
-  const castMap: Record<string, string> = {};
-  for (const m of Array.isArray(raw?.castMap) ? raw.castMap : []) {
-    const code = String(m?.code || "").trim();
-    const name = String(m?.name || "").trim();
-    if (code && name) castMap[code] = name;
-  }
-
-  return { days, castMap, notes: [] as any[] };
 }

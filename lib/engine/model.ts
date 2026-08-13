@@ -52,6 +52,31 @@ export function dayPeakSA(d: ShootDay): number {
   return Math.max(0, ...d.scenes.map((s: Scene) => s.sa), 0);
 }
 
+// Ensure every day has a clean list of location blocks (distinct scene-location
+// banners, in order). Block 0 is always the day's own `loc` so the primary
+// banner is guaranteed present; parser-captured secondary banners are kept.
+// Blank/consecutive-duplicate banners are dropped.
+function normalizeLocBlocks(d: ShootDay): void {
+  const src = Array.isArray(d.locBlocks) ? d.locBlocks : [];
+  const primary = (d.loc || "").trim();
+  const out: { loc: string; from: number }[] = [];
+  const seen = new Set<string>();
+  const add = (loc: string, from: number) => {
+    const v = (loc || "").trim();
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    out.push({ loc: v, from: Math.max(0, from | 0) });
+  };
+  if (primary) add(primary, 0);
+  for (const b of src) add(b.loc, b.from);
+  if (!out.length) {
+    const slug = d.scenes?.find((s) => (s.slug || "").trim())?.slug;
+    if (slug) add(slug, 0);
+  }
+  if (out.length) d.locBlocks = out;
+  else delete d.locBlocks;
+}
+
 export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleModel {
   for (const d of model.days) {
     d.unit = unit;
@@ -68,6 +93,7 @@ export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleM
       if (slug) d.loc = slug;
     }
     if (/^studio$/i.test((d.loc || "").trim())) d.loc = "OMAX Studio";
+    normalizeLocBlocks(d);
   }
   model.multiUnit = false;
   return model;

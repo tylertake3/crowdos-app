@@ -864,6 +864,50 @@ body:not(.light) .t3wordmark{filter:invert(1)}
   .rp-viewer{width:auto!important;border-left:none;border-top:1px solid var(--line);height:46vh}
   .rp-divider{display:none!important}
 }
+/* docked schedule-PDF panel — right-hand column beside the day board so the
+   original document can be cross-checked against the app live. Hidden until
+   body.pdf-docked is set; sticky so it stays put while the board scrolls. */
+.board-pdf{display:none;flex:none;width:44%;min-width:300px;max-width:70vw;
+  align-self:stretch;position:sticky;top:10px;height:calc(100vh - 20px);
+  flex-direction:column;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;margin:10px 10px 10px 0;overflow:hidden;z-index:30}
+.board-pdf-divider{display:none;flex:none;width:7px;cursor:col-resize;background:var(--line);
+  align-self:stretch;position:sticky;top:10px;height:calc(100vh - 20px);margin:10px 0}
+.board-pdf-divider:hover{background:var(--hv-line)}
+body.pdf-docked .board-pdf,body.pdf-docked .board-pdf-divider{display:flex}
+.board-pdf .bp-bar{gap:8px}
+.board-pdf .bp-title{font-family:var(--cond);font-size:13px;font-weight:600;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}
+.board-pdf .rpv-tabs{flex:0 1 auto}
+.board-pdf .bp-close{color:var(--sub)}
+.board-pdf .bp-close:hover{color:var(--bad,#c33);border-color:var(--hv-line)}
+.board-pdf .rpv-pages{background:var(--bg)}
+.tb-btn.on{color:var(--hv);border-color:var(--hv-line);background:var(--hv-dim)}
+.tb-btn.muted{opacity:.5}
+/* Re-check popover */
+.recheck-pop{position:absolute;z-index:120;background:var(--panel);border:1px solid var(--hv-line);
+  border-radius:12px;padding:14px;box-shadow:0 12px 34px rgba(0,0,0,.28)}
+.recheck-pop .rc-h{font-family:var(--cond);font-weight:600;font-size:15px;color:var(--ink);margin-bottom:4px}
+.recheck-pop .rc-sub{font-size:12px;color:var(--sub);line-height:1.4;margin-bottom:10px}
+.recheck-pop .rc-chips{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.recheck-pop .rc-chip{text-align:left;font-size:12px;line-height:1.35;color:var(--ink);
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer}
+.recheck-pop .rc-chip:hover{border-color:var(--hv-line);color:var(--hv)}
+.recheck-pop .rc-text{width:100%;box-sizing:border-box;resize:vertical;font-family:inherit;font-size:13px;
+  color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 9px}
+.recheck-pop .rc-text:focus{outline:none;border-color:var(--hv-line)}
+.recheck-pop .rc-text.rc-err{border-color:var(--bad,#c33)}
+.recheck-pop .rc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.recheck-pop .rc-go{border-color:var(--hv-line);color:var(--hv)}
+/* with the docked PDF open, a day's header line is clickable to jump the PDF to it */
+body.pdf-docked .dh-top{cursor:pointer}
+body.pdf-docked .dh-top:hover .ddate{color:var(--hv)}
+body.pdf-docked .dh-top button,body.pdf-docked .dh-top a,body.pdf-docked .dh-top .dpill,body.pdf-docked .dh-top input,body.pdf-docked .dh-top textarea,body.pdf-docked .dh-top .person{cursor:auto}
+@media(max-width:900px){
+  .board-pdf{position:fixed;inset:0;width:auto!important;max-width:none;height:auto;
+    margin:0;border-radius:0;z-index:80}
+  .board-pdf-divider{display:none!important}
+}
 .rp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .rp-stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 13px}
 .rp-stat .n{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -920,6 +964,46 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .rp-edit::placeholder{color:var(--dayext);opacity:.9}
 .rp-delday{background:none;border:none;color:var(--faint);font-size:13px;padding:2px 6px;border-radius:6px;cursor:pointer}
 .rp-delday:hover{color:#e5534b;background:rgba(229,83,75,.12)}
+/* editable crowd number: compact, right-aligned */
+.rp-num{width:58px;min-width:58px;text-align:right}
+.rp-crowdcell{display:inline-flex;align-items:center;gap:3px;justify-content:flex-end;width:100%}
+/* crowd makeup toggle (days that carry named groups) */
+.rp-crowdtog{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);
+  font-family:var(--mono);font-size:11.5px;padding:3px 6px;cursor:pointer;width:100%;
+  display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;font-variant-numeric:tabular-nums}
+.rp-tbl tr:hover .rp-crowdtog{border-color:var(--line2)}
+.rp-crowdtog:hover,.rp-crowdtog.open{border-color:var(--hv-line)}
+.rp-crowdtog .cv{color:var(--faint);font-size:9px;transition:transform .12s ease}
+.rp-crowdtog.open .cv{transform:rotate(90deg);color:var(--hv)}
+/* compact ＋ that opens the drawer on a plain (no named groups) day */
+.rp-crowdtog.mini{width:auto;flex:none;padding:2px 5px;color:var(--faint);font-size:12px;line-height:1}
+.rp-crowdtog.mini:hover{color:var(--hv)}
+/* the expanded makeup drawer row */
+.rp-crowdrow td{background:var(--panel2);padding:0 11px 9px 11px;white-space:normal}
+.rp-crowdrow:hover td{background:var(--panel2)}
+.rp-crowdbox{padding:9px 10px;border:1px solid var(--line2);border-radius:9px;background:var(--panel)}
+.rp-crowdhd{font-family:var(--cond);font-size:11px;color:var(--sub);margin-bottom:8px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rp-crowdhd b{color:var(--hv);font-family:var(--mono)}
+.rp-crowdtot-ed{display:inline-flex;align-items:center;gap:6px;font-family:var(--cond);font-size:11px;color:var(--sub)}
+.rp-crowdtot-ed .rp-num{width:64px;min-width:64px;text-align:right;border-color:var(--line2);font-size:12px}
+.rp-crowdnone{grid-column:1/-1;font-family:var(--mono);font-size:11px;color:var(--faint);padding:4px 2px}
+.rp-crowdfoot{margin-top:9px;font-family:var(--mono);font-size:11px;color:var(--sub)}
+.rp-crowdfoot b{color:var(--dayext)}
+.rp-crowdfoot.done{color:var(--sub)}
+.rp-crowdfoot.done b{color:#4cc38a}
+.rp-crowdgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px}
+.rp-crowdit{display:flex;align-items:center;justify-content:space-between;gap:6px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:2px 4px 2px 9px}
+.rp-crowdit>span{font-family:var(--mono);font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rp-crowdit .rp-num{width:50px;min-width:50px;flex:none;text-align:right;border-color:var(--line2)}
+.rp-crowdit.named{padding-left:4px}
+.rp-crowdit .rp-cname{flex:1 1 auto;min-width:0;width:auto;border-color:var(--line2);font-size:11px;padding:3px 6px}
+.rp-crowddel{flex:none;background:none;border:none;color:var(--faint);font-size:12px;line-height:1;padding:2px 5px;border-radius:6px;cursor:pointer}
+.rp-crowddel:hover{color:#e5534b;background:rgba(229,83,75,.12)}
+.rp-crowdadd{margin-top:8px;background:transparent;border:1px dashed var(--line2);border-radius:7px;
+  color:var(--sub);font-family:var(--cond);font-size:11px;padding:5px 10px;cursor:pointer}
+.rp-crowdadd:hover{border-color:var(--hv-line);color:var(--hv)}
 .rp-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:13px 20px;border-top:1px solid var(--line);background:var(--panel)}
 .rp-foot .note{font-family:var(--mono);font-size:11px;color:var(--sub)}
 .rp-foot .note b{color:var(--dayext)}
@@ -950,6 +1034,7 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .ps-tbl input,.ps-tbl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);font-family:var(--mono);font-size:11.5px;padding:4px 6px;max-width:100%}
 .ps-tbl tr:hover input,.ps-tbl tr:hover select{border-color:var(--line2)}
 .ps-tbl input:focus{background:var(--panel);border-color:var(--hv-line);outline:none}
+.ps-scene{font-weight:600;font-size:12px;color:var(--ink)}
 .ps-rate-group td{font-family:var(--cond);font-size:10px;color:var(--faint);background:none;border-bottom:1px solid var(--line2);padding:10px 9px 4px}
 .ps-rate-group:first-child td{padding-top:2px}
 .ps-band{font-family:var(--cond);font-size:9.5px;border-radius:14px;padding:1px 8px;border:1px solid}
@@ -1289,6 +1374,37 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .code.spact.named.click{background:rgba(183,138,255,.12);color:#9a6cd8}
 .code.named.click:hover{border-color:var(--crowd)!important;background:var(--crowd);color:#fff}
 
+/* movable crowd groups: each chip can be dragged, and carries a ⋯ menu handle */
+.crgrp{position:relative;padding-right:19px}
+.crgrp[draggable=true]{cursor:grab}
+.crgrp.crdragging{opacity:.4}
+.crgrp .crmenu{position:absolute;top:50%;right:2px;transform:translateY(-50%);display:inline-flex;
+  align-items:center;justify-content:center;width:15px;height:15px;padding:0;line-height:1;
+  border:none;border-radius:4px;background:transparent;color:inherit;font-size:13px;font-weight:700;
+  opacity:.55;cursor:pointer}
+.crgrp .crmenu:hover{opacity:1;background:rgba(127,127,127,.28)}
+.crgrp:hover .crmenu{opacity:.9}
+/* a crowd cell lit up as a drop target while dragging a group */
+.reqcell.drop-ok{outline:2px dashed var(--crowd);outline-offset:-3px;background:var(--crowd-dim)!important}
+
+/* "same people or new people?" prompt shown when a group is copied elsewhere */
+.samenew-wrap{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}
+.samenew{background:var(--panel);border:1px solid var(--line2);border-radius:var(--r);padding:20px 20px 16px;
+  width:min(420px,92vw);box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.samenew-h{font-size:14.5px;font-weight:600;color:var(--ink)}
+.samenew-q{font-size:12.5px;color:var(--sub);margin:6px 0 14px;line-height:1.5}
+.samenew-btns{display:flex;gap:10px}
+.samenew-btns button{flex:1;display:flex;flex-direction:column;gap:3px;text-align:left;
+  border:1px solid var(--line2);border-radius:9px;padding:11px 12px;background:var(--panel2);
+  color:var(--ink);font-size:13px;font-weight:600;cursor:pointer;transition:border-color .12s,background .12s}
+.samenew-btns button small{font-weight:400;font-size:11px;color:var(--sub);line-height:1.4}
+.samenew-same:hover{border-color:var(--crowd);background:var(--crowd-dim)}
+.samenew-new:hover{border-color:var(--note);background:var(--notebg)}
+.samenew-cancel{display:block;margin:12px auto 0;background:none;border:none;color:var(--sub);
+  font-size:12px;cursor:pointer;padding:4px 8px}
+.samenew-cancel:hover{color:var(--ink)}
+
 /* inline naming expander under an Unnamed SA row in Briefs */
 .anonrow{cursor:pointer}
 .anonexp td{background:var(--panel2)!important;padding:0 14px 14px}
@@ -1308,11 +1424,20 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .btn-avatar{width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:-5px;margin-right:7px}
 
 /* real-location editor on the day header */
-.dloc-edit{background:none;border:none;color:var(--faint);font-size:12px;padding:2px 4px;line-height:1}
+.dlocs{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.dlocblk{display:inline-flex;align-items:center;gap:3px}
+.dlocblk+.dlocblk{padding-left:8px;border-left:1px solid var(--line2)}
+/* the "actually shot at" badge — shown only when reality differs from scene */
+.dloc-real{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;
+  color:var(--hvink,#fff);background:var(--hv);border-radius:999px;padding:1px 8px;white-space:nowrap}
+.dloc-edit{background:none;border:none;color:var(--faint);font-size:12px;padding:2px 4px;line-height:1;cursor:pointer}
 .dloc-edit:hover{color:var(--hv)}
 .dloc-edit.on{color:var(--hv)}
+.dloc-edit-wrap{display:inline-flex;align-items:center;gap:8px}
 .dloc-input{background:var(--panel);border:1px solid var(--hv-line);border-radius:7px;color:var(--ink);
   padding:4px 9px;font-size:12.5px;font-weight:600;min-width:220px;font-family:inherit}
+.dloc-thisday-lbl{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--sub);white-space:nowrap;cursor:pointer}
+.dloc-thisday-lbl input{margin:0}
 
 /* AI cross-check spinner on the review page */
 .crossspin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--hv);
