@@ -139,6 +139,11 @@ export interface Scene {
   unit: string;
   desc: string;
   sa: number;
+  // Continuity flag for the ANONYMOUS background bucket. `sa` is a bare integer
+  // with no row to hang a per-row `asAbove` flag on, so its "same people as an
+  // earlier scene" state lives here. Every surface that shows the bucket has to
+  // read it, or the day board and the breakdown disagree about the same people.
+  saAbove?: boolean;
   veh: number;
   pod: boolean;
   podVeh?: number;

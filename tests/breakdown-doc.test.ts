@@ -89,6 +89,23 @@ describe("crowd breakdown document", () => {
     expect(other.map((l) => l.name)).toEqual(["Village Child", "AV Cars (Action)"]);
   });
 
+  it("carries the anonymous bucket's from-above flag, so it cannot disagree with the day board", () => {
+    // `sa` is a bare integer with no row to hang a flag on, so its continuity
+    // state lives on the scene as `saAbove`. The day board reads it. If this
+    // document did not, ticking "from above" on unnamed background would move
+    // one view and not the other — and this page would go on counting people
+    // the day board says are already booked.
+    const plain = cbSceneLines(scene({ sa: 48 })).crowd[0];
+    expect(plain.fromAbove).toBe(false);
+
+    const carried = cbSceneLines(scene({ sa: 48, saAbove: true })).crowd[0];
+    expect(carried.fromAbove).toBe(true);
+    // explicit, so the day pass can never choose it as the booking
+    expect(carried.explicitFromAbove).toBe(true);
+    // and it keeps its own figure — what the scene needs is still printed
+    expect(carried.no).toBe(48);
+  });
+
   it("tells every line which scene list it came from, so an edit can be written back", () => {
     // The STUNTS/OTHER column prints three separate lists as one run, so a
     // line's place in the printed run is NOT its place in its own list. An

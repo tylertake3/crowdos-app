@@ -501,8 +501,13 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       name: "SA's",
       notes: "",
       tier: "SA",
-      fromAbove: false,
-      explicitFromAbove: false,
+      // The anonymous bucket carries its continuity flag on the scene, not on a
+      // row (there is no row — `sa` is a bare integer). The day board reads it,
+      // so this document must too: otherwise ticking "from above" on unnamed
+      // background moves one view and not the other, and this page would count
+      // people the day board says are already booked.
+      fromAbove: !!sc.saAbove,
+      explicitFromAbove: !!sc.saAbove,
       reference: false,
       tbc: false,
       // all anonymous background on a day is one pool — that is precisely the
