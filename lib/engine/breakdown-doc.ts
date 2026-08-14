@@ -202,7 +202,13 @@ export function cbColLetter(index: number): string {
 
 /** One requirement line inside a scene block. */
 export interface CbLine {
-  /** null when the line is carried from another scene — shown, never re-booked */
+  /**
+   * What THIS scene needs — printed for every line, carried or not, because it
+   * is what the floor reads off the page and it changes scene by scene. It is
+   * null only where the source gives no number at all (a whole-scene "AS SCENE
+   * 12" pointer). Whether the day BOOKS these people is a separate question,
+   * answered by `fromAbove` and by the "(FROM …)" label on the name.
+   */
   no: number | null;
   name: string;
   notes: string;
@@ -222,6 +228,11 @@ export interface CbLine {
   key: string;
   /** index of the source row inside its scene array, for write-back */
   slot: number;
+  /**
+   * The line is a pure pointer at another scene ("AS SCENE 12"), not a group
+   * of its own — it never books and never gets re-labelled.
+   */
+  pointer?: boolean;
   /** supplementary fee per head on this line (Featured = SA + sups) */
   sup: number;
   /**
@@ -433,17 +444,20 @@ function toLine(r: NamedCount, tier: ReqTier, reference: boolean, slot: number):
   const raw = clean(r.name);
   const name = raw || (tier === "SA" ? "SA's" : tier);
   return {
+    // the day pass (markDayBookings) decides which lines actually book people
+    // and blanks the rest, so every line starts out with its own figure
     no: +r.count || 0,
-    name: fromAbove && !/from above/i.test(name) ? `${name} (FROM ABOVE)` : name,
+    name,
     notes: lineNotes(r),
     tier,
     fromAbove,
     explicitFromAbove: fromAbove,
     reference,
     tbc: !!r.tierTbc,
-    // pool on the SOURCE name, never the decorated one, so a "(FROM ABOVE)"
-    // suffix can't split a group away from its own pool
-    key: cbKey(tier, raw.replace(/\s*\(\s*from above[^)]*\)/i, "")),
+    // Pool on the group's own name, with any carried-from decoration stripped
+    // ("(48 FROM ABOVE)", "(FROM SC 12)") — a label the document itself wrote
+    // must never split a group away from the people it is pointing at.
+    key: cbKey(tier, raw.replace(/\s*\(\s*(?:\d+\s+)?from\s+(?:above|below|sc\b)[^)]*\)/i, "")),
     slot,
     sup: +(r.sup ?? 0) || 0,
     cost: 0,
@@ -506,6 +520,7 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       tbc: false,
       key: cbKey("SA", ""),
       slot: -1,
+      pointer: true,
       sup: 0,
       cost: 0,
     });
@@ -514,31 +529,74 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
 }
 
 /**
- * Repeated groups later in a day are the same booked people.  Make that
- * visible on the document instead of leaving readers to infer it from the
- * totals.  A larger later requirement remains a normal line: it may bring in
- * additional people and must therefore stay available to the day peak.
+ * Decide, once per DAY, which lines actually book people.
+ *
+ * A shoot day calls each group ONCE. "150 SA" in six scenes of the same day is
+ * 150 people, not 900, and where a group is called at different strengths
+ * through the day (150, then 40, then 130) the day books the biggest call,
+ * because every smaller one is part of it. So exactly ONE line per group is the
+ * day's booking — the largest — and every other line of that group is labelled
+ * as the same people: "(FROM ABOVE)", or "(FROM SC 9/50)" when the scene that
+ * books them comes later in the day.
+ *
+ * Every line KEEPS its own number. What each scene needs is what the AD on the
+ * floor reads off the page, and it changes scene by scene, so it must never be
+ * hidden. The label is what tells the total which lines to leave out — see
+ * cbToStyledSheet, where the day total adds column NO. and skips any line whose
+ * CROWD CHARACTER says it is carried.
  */
-function markCarriedLines(lines: CbLine[], seen: Map<string, number>): void {
-  for (const line of lines) {
-    const count = line.no || 0;
-    const prior = seen.get(line.key) || 0;
-    if (!line.fromAbove && count > 0 && prior === count) {
-      // exactly the same group as an earlier scene — carried whole, never re-booked
-      line.fromAbove = true;
-      if (!/\bfrom above\b/i.test(line.name)) line.name = `${line.name} (FROM ABOVE)`;
-      line.cost = 0;
-    } else if (!line.fromAbove && count > prior && prior > 0) {
-      // a larger later requirement: some of these people are already called in an
-      // earlier scene, the rest are genuinely new. It stays a real booking (the
-      // extra heads count), but the document spells out how many are from above
-      // instead of leaving the reader to work it out.
-      if (!/\bfrom above\b/i.test(line.name)) {
-        line.name = `${line.name} (INCLUDING ${prior} FROM ABOVE)`;
-      }
+/**
+ * How every carried line is labelled, and the one string the exported day
+ * total keys off ("SA (FROM ABOVE)", "SA (FROM SC 9/50)"). Kept in one place
+ * because the label and the formula are two halves of the same promise: change
+ * the wording without changing this and days silently start double-counting.
+ */
+export const CB_CARRIED_MARK = "(FROM ";
+
+function markDayBookings(scenes: { num: string; lines: CbLine[] }[]): void {
+  // Pass 1 — the biggest call for each identity anywhere in the day. A line the
+  // source explicitly marks "as above" can never be the booking: it is a
+  // pointer at other people by definition.
+  const best = new Map<string, { count: number; line: CbLine; at: number; num: string }>();
+  scenes.forEach((sc, at) => {
+    for (const line of sc.lines) {
+      if (line.explicitFromAbove || line.pointer) continue;
+      const count = line.no || 0;
+      if (count <= 0) continue;
+      const cur = best.get(line.key);
+      if (!cur || count > cur.count) best.set(line.key, { count, line, at, num: sc.num });
     }
-    if (!line.fromAbove && count > prior) seen.set(line.key, count);
-  }
+  });
+
+  // Pass 2 — everything else of that identity is the same people.
+  scenes.forEach((sc, at) => {
+    for (const line of sc.lines) {
+      if (line.pointer) continue; // already says what it points at
+      const booking = best.get(line.key);
+      if (booking && booking.line === line) continue; // this line IS the booking
+      const count = line.no || 0;
+      if (!line.fromAbove && count <= 0) continue; // an empty line carries nothing
+      line.fromAbove = true;
+      line.cost = 0;
+      // the line KEEPS line.no — what this scene needs is not the same thing as
+      // who the day is booking, and the page has to show both
+      // A fee belongs to the GROUP (a wig, a costume, a uniform), so it has to
+      // travel to whichever line books them, or it disappears from the day
+      // the moment the booking sits in another scene.
+      if (booking && line.sup > booking.line.sup) booking.line.sup = line.sup;
+      // Where the people on this line are actually booked. Every carried label
+      // is written "(FROM …)" without exception — that exact opening is what
+      // the exported day total looks for, so a label that drifted out of this
+      // shape would quietly start double-counting.
+      const where = !booking || booking.at < at
+        ? "FROM ABOVE"
+        : booking.num
+          ? `FROM SC ${clean(booking.num).toUpperCase()}`
+          : "FROM BELOW";
+      const base = line.name.replace(/\s*\((?:\d+\s+)?from (?:above|below|sc[^)]*)\)\s*$/i, "");
+      line.name = `${base} ${CB_CARRIED_MARK}${where.replace(/^FROM /, "")})`;
+    }
+  });
 }
 
 function refreshSceneFigures(
@@ -601,6 +659,8 @@ export function poolDayFees(scenes: { crowd: CbLine[] }[]): number {
   const sup = new Map<string, number>();
   for (const sc of scenes) {
     for (const l of sc.crowd) {
+      // a group's fee already travels to the line that books it
+      // (markDayBookings), so the printed FEES column and this total agree
       if (l.fromAbove) continue;
       heads.set(l.key, Math.max(heads.get(l.key) || 0, l.no || 0));
       sup.set(l.key, Math.max(sup.get(l.key) || 0, l.sup || 0));
@@ -748,8 +808,6 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     rows.push({ kind: "unit", label: cbUnitLabel(d), dayId: d.id });
 
     const dayScenes: CbScene[] = [];
-    const seenCrowd = new Map<string, number>();
-    const seenOther = new Map<string, number>();
 
     // Location banners split the day into blocks — "EXT USS AUGUSTA BUILD".
     const blocks = new Map<number, string>();
@@ -767,9 +825,6 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       }
 
       const row = buildScene(d, sc, i, perHead);
-      markCarriedLines(row.crowd, seenCrowd);
-      markCarriedLines(row.other, seenOther);
-      refreshSceneFigures(row, perHead);
       const empty = !row.crowd.length && !row.other.length;
       if (opts.hideEmpty && empty) return;
 
@@ -778,10 +833,19 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       else if (row.na) confirmedNone++;
       else unassessed++;
 
-      if (!includeOther) row.other = [];
       dayScenes.push(row);
       rows.push(row);
     });
+
+    // Which lines book people is a decision about the WHOLE day (a group's
+    // biggest call can sit in its last scene), so it is taken once the day's
+    // scenes are all built — never scene by scene.
+    markDayBookings(dayScenes.map((s) => ({ num: s.sceneNum, lines: s.crowd })));
+    markDayBookings(dayScenes.map((s) => ({ num: s.sceneNum, lines: s.other })));
+    for (const s of dayScenes) {
+      refreshSceneFigures(s, perHead);
+      if (!includeOther) s.other = [];
+    }
 
     // peak-per-identity across the day, NOT the sum of the scene figures
     const pooled = poolDayHeads(dayScenes);
@@ -940,10 +1004,11 @@ const crowdCountIndex = (layout: CbColDef[]): number => {
   return i >= 0 ? i : roleIndex(layout, "crowdCombo");
 };
 
-// "38 SA" — count then name, in a single merged cell. Carried lines retain
-// their count for the reader, while the total formula explicitly excludes them.
+// "38 SA" — count then name, in a single merged cell. A carried line keeps its
+// count too; it is the "(FROM ABOVE)" label on the name that keeps it out of
+// the totals.
 export function cbComboText(c: CbLine | undefined, blank: boolean, na: boolean): string {
-  if (!c) return blank ? (na ? "N/A" : "Not yet assessed") : "";
+  if (!c) return blank && na ? "N/A" : "";
   const no = c.no != null ? String(c.no) : "";
   return [no, c.name].filter(Boolean).join(" ");
 }
@@ -971,18 +1036,25 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   add({ kind: "blank", cells: Array(w).fill(null) });
   const headerRow = add({ kind: "header", cells: layout.map((c) => c.header) });
 
-  // Live totals: each day pools its scene lines by group and takes the peak for
-  // each group; weeks and the breakdown total then add those day figures. This
-  // is exactly how the app calculates a booking. Emitting real formulas means
-  // that changing a scene count in Excel or Google Sheets flows all the way to
-  // the bottom total without accidentally counting a repeated group twice.
+  // Live totals. A day adds up its NO. column between its unit band and its
+  // total row, SKIPPING any line whose CROWD CHARACTER says it is carried —
+  // "SA (FROM ABOVE)", "SA (FROM SC 9/50)". Every line keeps its own number,
+  // because what a scene needs changes scene by scene and the floor reads it
+  // off this page; the label is what stops the same people being booked twice.
+  // Weeks then add their day totals, and the breakdown adds the weeks.
+  //
+  // The exclusion is written with SUMPRODUCT + SEARCH deliberately. The obvious
+  // alternatives are traps: SUMIFS with a "<>*FROM*" wildcard behaves
+  // differently between Excel and Google Sheets, and MAXIFS (which this
+  // document used to lean on) refuses to take a range as its criteria in Google
+  // Sheets at all — that is the "#VALUE! mismatched range sizes" error that
+  // arrived in real productions' inboxes. SUMPRODUCT with a SEARCH test is
+  // array-native in both applications, and is one line a recipient can read.
   //
   // The formula columns are resolved from wherever each count/money column
   // actually lands in the layout, so reordering never breaks the totals.
   const crowdIdx = crowdCountIndex(layout);
-  const crowdNameIdx = roleIndex(layout, "crowdName");
   const otherIdx = roleIndex(layout, "otherNo");
-  const otherNameIdx = roleIndex(layout, "otherName");
   const feesIdx = roleIndex(layout, "fees");
   const costIdx = roleIndex(layout, "cost");
   const CROWD_COL = cbColLetter(crowdIdx);
@@ -991,16 +1063,24 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   const COST_COL = costIdx >= 0 ? cbColLetter(costIdx) : "";
   const sumOf = (rowNums: number[], col: string): string =>
     rowNums.map((n) => `${col}${n}`).join("+");
-  // SUMPRODUCT + MAXIFS implements the day's booking rule in a portable
-  // spreadsheet formula: for every named group, take its largest scene count
-  // once, then add those peaks. A combined count/name column is intentionally
-  // left as a value because its editable entries are text ("20 Guards"), not
-  // separate numeric cells that a formula can safely calculate from.
-  const pooled = (countIdx: number, nameIdx: number, from: number, to: number): string | null => {
+  // A day's people: add its scene lines, less the carried ones. Needs both a
+  // numeric count column and the name column that labels it — when the count
+  // and the name are merged into one column the entries are text ("20
+  // GUARDS"), which no formula can safely add, so that layout keeps the figure
+  // the app worked out.
+  //
+  // CB_CARRIED_MARK is the opening of every carried label the document writes
+  // (markDayBookings); nothing else in a crowd character name looks like it.
+  const dayCount = (
+    countIdx: number,
+    nameIdx: number,
+    from: number,
+    to: number
+  ): string | null => {
     if (countIdx < 0 || nameIdx < 0 || from > to) return null;
     const counts = `${cbColLetter(countIdx)}${from}:${cbColLetter(countIdx)}${to}`;
     const names = `${cbColLetter(nameIdx)}${from}:${cbColLetter(nameIdx)}${to}`;
-    return `SUMPRODUCT((${names}<>\"\")*ISERROR(SEARCH(\"FROM ABOVE\",${names}))/COUNTIF(${names},${names}),MAXIFS(${counts},${names},${names}))`;
+    return `SUMPRODUCT(${counts},--ISERROR(SEARCH("${CB_CARRIED_MARK}",${names})))`;
   };
   let dayTotalRows: number[] = []; // day-total rows since the last week total
   const weekTotalRows: number[] = []; // week-total rows, for the breakdown total
@@ -1040,7 +1120,7 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
               case "desc": return i === 0 ? desc : null;
               case "day": return i === 0 ? dayCell : null;
               case "crowdNo": return c ? (c.no ?? null) : null;
-              case "crowdName": return c ? c.name : blank ? (sc.na ? "N/A" : "Not yet assessed") : null;
+              case "crowdName": return c ? c.name : blank && sc.na ? "N/A" : null;
               case "crowdCombo": return cbComboText(c, blank, sc.na) || null;
               case "crowdNotes": return c ? c.notes || null : null;
               case "otherNo": return o ? (o.no ?? null) : null;
@@ -1078,9 +1158,18 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
       const live = src.length > 0;
 
       const dayCrowdFormula =
-        r.kind === "dayTotal" ? pooled(crowdIdx, crowdNameIdx, dayFirstDetailRow, rows.length) : null;
+        r.kind === "dayTotal"
+          ? dayCount(
+              roleIndex(layout, "crowdNo"),
+              roleIndex(layout, "crowdName"),
+              dayFirstDetailRow,
+              rows.length
+            )
+          : null;
       const dayOtherFormula =
-        r.kind === "dayTotal" ? pooled(otherIdx, otherNameIdx, dayFirstDetailRow, rows.length) : null;
+        r.kind === "dayTotal"
+          ? dayCount(otherIdx, roleIndex(layout, "otherName"), dayFirstDetailRow, rows.length)
+          : null;
 
       let crowdCell: CbCell = dayCrowdFormula
         ? { formula: dayCrowdFormula, result: Number(t.no) || 0 }
@@ -1192,11 +1281,12 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
       for (let i = 0; i < n; i++) {
         const c = sc.crowd[i];
         const o = sc.other[i];
-        // A scene nobody has assessed must SAY so in the CSV, exactly as it does
-        // on screen and in the .xlsx. It used to come out as an empty cell,
-        // which in a spreadsheet is indistinguishable from "assessed, no crowd"
-        // — the one reading a recipient must never get wrong.
-        const emptyLabel = sc.na ? "N/A" : "Not yet assessed";
+        // A scene nobody has looked at yet is left BLANK — there is nothing to
+        // say about it yet, and inventing a label ("not yet assessed") just
+        // puts words in the recipient's document that no one asked for. A
+        // scene confirmed as needing nobody still says "N/A", because that is
+        // a real answer rather than an empty space.
+        const emptyLabel = sc.na ? "N/A" : "";
         const heads = c && !c.fromAbove ? c.no || 0 : 0;
         rows.push(
           build((role) => {

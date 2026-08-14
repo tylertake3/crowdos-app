@@ -1836,6 +1836,12 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .cbabove:hover{opacity:1;background:#f4f1fb;border-color:#e0d8f4;color:#5b3fa8}
 .cbabove:has(input:checked){opacity:1;background:#efe9fb;border-color:#cbbdf0;color:#5b3fa8}
 .cbabove input{accent-color:#5b3fa8;width:11px;height:11px;margin:0;cursor:pointer}
+/* Worked out by the breakdown itself (the same group is called in more than
+   one scene of the day): always visible and locked, so the tick reads as a
+   statement of what the document is doing rather than a control that ignores
+   you. The tooltip says how to book different people instead. */
+.cbabove.auto{opacity:1;cursor:help}
+.cbabove.auto input{cursor:help}
 .cbnote{font-size:9px}
 .cbna{font-weight:400;color:#444}
 .cbpend{color:#a35d19;font-weight:600}
