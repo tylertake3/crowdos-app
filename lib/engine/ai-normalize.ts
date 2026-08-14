@@ -86,16 +86,31 @@ export function normalize(raw: any) {
       const cast = (Array.isArray(sc?.cast) ? sc.cast : [])
         .map((c: any) => ({ code: String(c || "").trim(), type: "cast" as const }))
         .filter((c: any) => c.code);
+      // A scene heading is TWO different things: the set/location line
+      // ("EXT OUTSKIRTS OF BERLIN" — the slug) and the action sentence
+      // underneath it (the description). Older extractions only returned one
+      // text and it was copied into BOTH fields, so every scene printed the
+      // same sentence twice (once bold as the set, once grey as the action).
+      // Keep them apart: whatever the AI gives as the set line is the slug,
+      // fall back to the action sentence only when there is no set line, and
+      // never let the same text render in both places.
+      const rawSlug = String(sc?.slug || "").trim();
+      const rawDesc = String(sc?.desc || "").trim();
+      const same = (a: string, b: string) =>
+        a.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ===
+        b.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const slug = rawSlug || rawDesc;
+      const desc = !rawSlug || same(rawSlug, rawDesc) ? "" : rawDesc;
       return {
         num: String(sc?.num || "").trim(),
         part: "",
         ie: String(sc?.ie || "").trim(),
-        slug: String(sc?.desc || "").trim(),
+        slug,
         tod: String(sc?.tod || "").trim(),
         scriptDay: String(sc?.scriptDay || "").trim(),
         pages: String(sc?.pages || "").trim(),
         unit: "Main",
-        desc: String(sc?.desc || "").trim(),
+        desc,
         sa: 0,
         veh: Math.max(0, Math.round(Number(sc?.vehicles) || 0)),
         pod: false,

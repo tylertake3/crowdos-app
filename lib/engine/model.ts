@@ -52,6 +52,23 @@ export function dayPeakSA(d: ShootDay): number {
   return Math.max(0, ...d.scenes.map((s: Scene) => s.sa), 0);
 }
 
+// A day/scene "location" must name a real, mappable place — not a story beat.
+// Schedules sometimes head a day with a narrative sequence/section title
+// ("Hotel opening", "The Wedding", "Flashback", "Opening sequence", "Montage")
+// and both the AI reader and the `== … ==` banner parser can mistake that for
+// the day's location. Those are parts of the story, not somewhere the unit
+// travels, so we reject them: the field is blanked and falls through to the
+// scene location / "TBC" instead of showing a wrong place. The word list is
+// deliberately narrow (no real UK place contains these whole words) to avoid
+// ever dropping a genuine location.
+const SEQ_TITLE_RX =
+  /\b(opening|closing|finale|flash-?backs?|flash-?forwards?|montages?|sequences?|prologue|epilogue|reprise|titles?)\b/i;
+export function looksLikeSequenceTitle(s?: string): boolean {
+  const v = (s || "").trim();
+  if (!v) return false;
+  return SEQ_TITLE_RX.test(v);
+}
+
 // Ensure every day has a clean list of location blocks (distinct scene-location
 // banners, in order). Block 0 is always the day's own `loc` so the primary
 // banner is guaranteed present; parser-captured secondary banners are kept.
@@ -63,7 +80,7 @@ function normalizeLocBlocks(d: ShootDay): void {
   const seen = new Set<string>();
   const add = (loc: string, from: number) => {
     const v = (loc || "").trim();
-    if (!v || seen.has(v)) return;
+    if (!v || seen.has(v) || looksLikeSequenceTitle(v)) return;
     seen.add(v);
     out.push({ loc: v, from: Math.max(0, from | 0) });
   };
@@ -88,6 +105,10 @@ export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleM
     // routinely returns days with no `loc`) is filled in the same way,
     // instead of showing a board full of blank locations. Travel-band
     // auto-detect reads this field, so a blank costs real money.
+    // Drop a narrative sequence/section title mistaken for the location
+    // ("Hotel opening" etc.) so the day falls back to its scene location and
+    // reads "TBC" for the real place, rather than showing a non-place.
+    if (looksLikeSequenceTitle(d.loc)) d.loc = "";
     if (!(d.loc || "").trim()) {
       const slug = d.scenes?.find((s) => (s.slug || "").trim())?.slug;
       if (slug) d.loc = slug;

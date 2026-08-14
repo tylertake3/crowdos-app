@@ -351,6 +351,13 @@ export interface CbOpts {
 }
 
 const clean = (v: unknown): string => String(v ?? "").replace(/\s+/g, " ").trim();
+/** Same words ignoring case, spacing and punctuation — used to spot a set line
+ *  and an action sentence that are really the one text stored twice. */
+const sameText = (a: unknown, b: unknown): boolean => {
+  const k = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const x = k(a);
+  return !!x && x === k(b);
+};
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -632,7 +639,10 @@ function buildScene(
     loc: clean(d.loc).toUpperCase(),
     ie: clean(sc.ie).toUpperCase(),
     slug: clean(sc.slug || sc.desc).toUpperCase(),
-    desc: clean(sc.slug ? sc.desc : ""),
+    // Older schedules stored the SAME text as both the set line and the action
+    // sentence, which printed it twice in the one cell. Only print the action
+    // line when it genuinely says something different.
+    desc: clean(sc.slug && !sameText(sc.slug, sc.desc) ? sc.desc : ""),
     cast: (sc.cast || [])
       .map((c) => clean(c.code))
       .filter(Boolean)
