@@ -229,6 +229,12 @@ export interface CbLine {
   /** index of the source row inside its scene array, for write-back */
   slot: number;
   /**
+   * WHICH scene array the row came from — the other half of the write-back
+   * address for the STUNTS/OTHER column, whose three sources (stunt extras,
+   * children, action vehicles) are printed as one merged list.
+   */
+  src?: "extras" | "children" | "avs";
+  /**
    * The line is a pure pointer at another scene ("AS SCENE 12"), not a group
    * of its own — it never books and never gets re-labelled.
    */
@@ -439,7 +445,13 @@ export function cbKey(tier: ReqTier, name: string): string {
   return `${tier}|${clean(name).toLowerCase()}`;
 }
 
-function toLine(r: NamedCount, tier: ReqTier, reference: boolean, slot: number): CbLine {
+function toLine(
+  r: NamedCount,
+  tier: ReqTier,
+  reference: boolean,
+  slot: number,
+  src?: "extras" | "children" | "avs"
+): CbLine {
   const fromAbove = isFromAbove(r);
   const raw = clean(r.name);
   const name = raw || (tier === "SA" ? "SA's" : tier);
@@ -448,6 +460,7 @@ function toLine(r: NamedCount, tier: ReqTier, reference: boolean, slot: number):
     // and blanks the rest, so every line starts out with its own figure
     no: +r.count || 0,
     name,
+    src,
     notes: lineNotes(r),
     tier,
     fromAbove,
@@ -468,11 +481,12 @@ function push(
   into: CbLine[],
   arr: NamedCount[] | undefined,
   tier: ReqTier,
-  reference: boolean
+  reference: boolean,
+  src?: "extras" | "children" | "avs"
 ): void {
   (arr || []).forEach((r, i) => {
     if (!clean(r.name) && !(+r.count || 0)) return;
-    into.push(toLine(r, r.tier ?? tier, reference, i));
+    into.push(toLine(r, r.tier ?? tier, reference, i, src));
   });
 }
 
@@ -502,9 +516,9 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
   push(crowd, sc.saChars, "SA", false);
   push(crowd, sc.featured, "Featured", false);
   push(crowd, sc.spacts, "SPACT", false);
-  push(other, sc.extras, "Stunt", true);
-  push(other, sc.children, "Child", true);
-  push(other, sc.avs, "AV", true);
+  push(other, sc.extras, "Stunt", true, "extras");
+  push(other, sc.children, "Child", true, "children");
+  push(other, sc.avs, "AV", true, "avs");
   // A scene whose whole cell reads "(FROM ABOVE)" lists nothing of its own —
   // it inherits the previous scene's people. Print that as the single line it
   // is, so the document never shows a silently blank requirement cell.

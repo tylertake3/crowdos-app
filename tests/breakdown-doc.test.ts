@@ -89,6 +89,28 @@ describe("crowd breakdown document", () => {
     expect(other.map((l) => l.name)).toEqual(["Village Child", "AV Cars (Action)"]);
   });
 
+  it("tells every line which scene list it came from, so an edit can be written back", () => {
+    // The STUNTS/OTHER column prints three separate lists as one run, so a
+    // line's place in the printed run is NOT its place in its own list. An
+    // editing surface needs both halves of the address (src + slot) or a typed
+    // correction lands on the wrong row.
+    const sc = scene({
+      sa: 10,
+      saChars: [{ name: "Commuters", count: 4 }],
+      extras: [{ name: "Stunt Drivers", count: 3 }],
+      children: [{ name: "Village Child", count: 2 }],
+      avs: [{ name: "AV Cars (Action)", count: 2 }],
+    });
+    const { crowd, other } = cbSceneLines(sc);
+    expect(other.map((l) => [l.src, l.slot])).toEqual([
+      ["extras", 0],
+      ["children", 0],
+      ["avs", 0],
+    ]);
+    // crowd lines are addressed by slot within their own tier array, as before
+    expect(crowd.map((l) => l.slot)).toEqual([-1, 0]);
+  });
+
   it("prints a from-above line but never counts it again", () => {
     // POP sc 16 PT 2: two carried groups plus one genuinely new mechanic.
     // Only the mechanic is a booking.
