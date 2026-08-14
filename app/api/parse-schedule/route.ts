@@ -271,7 +271,7 @@ export async function POST(req: Request) {
   if (!hasText && !images.length) {
     return Response.json({ error: "No schedule text or images supplied." }, { status: 400 });
   }
-  // ~1.1M chars ≈ well under Haiku's 200K-token context; guard against runaway inputs.
+  // ~1.1M chars keeps us within the model's context window; guard against runaway inputs.
   if (text.length > 1_100_000) text = text.slice(0, 1_100_000);
 
   // Known terms ride ahead of every chunk so the model applies them silently
@@ -297,7 +297,7 @@ export async function POST(req: Request) {
   // through the chunked path as before.
   const chunks = hasText ? chunkText(text) : ["(photographed schedule pages attached)"];
 
-  // At most 2 chunks in flight — keeps a fresh, low-tier account under its
+  // At most 2 chunks in flight — keeps the account under its per-minute
   // rate limits. Each chunk fails independently (see readChunk), so one bad
   // chunk never kills the whole read.
   const results = images.length
@@ -394,8 +394,14 @@ async function readChunk(client: Anthropic, text: string, images?: { media_type:
       { type: "text", text },
     ];
     const stream = client.messages.stream({
-      model: "claude-haiku-4-5",
+      model: "claude-opus-5",
       max_tokens: 32000,
+      // Opus 5 reasons by default; we disable that for this extraction task so
+      // the whole token budget goes to the JSON answer (reasoning and output
+      // share max_tokens, and a chunk that runs over is silently dropped —
+      // exactly the "missing scenes/numbers" failure we're fixing). Opus's raw
+      // reading accuracy on dense number grids is the win here.
+      thinking: { type: "disabled" },
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } } as any,
       messages: [{ role: "user", content }],
