@@ -14,10 +14,10 @@
   --dayext:#ffc53d; --dayint:#c9cfd8; --nightint:#5b8def; --nightext:#4cc38a; --dusk:#c08ae0;
   --good:#4cc38a; --bad:#e5534b;
   --tipbg:#000; --tipink:#fff; --topbg:rgba(14,16,19,.88); --hover:rgba(255,255,255,.02);
-  --mono:'Poppins',-apple-system,'Segoe UI',sans-serif;
-  --cond:'Poppins',-apple-system,'Segoe UI',sans-serif;
-  --body:'Poppins',-apple-system,'Segoe UI',sans-serif;
-  --r:12px;
+  --mono:'Inter',-apple-system,'Segoe UI',sans-serif;
+  --cond:'Inter',-apple-system,'Segoe UI',sans-serif;
+  --body:'Inter',-apple-system,'Segoe UI',sans-serif;
+  --r:12px; --panelInset:10px;
 }
 body.light{
   --bg:#ffffff; --surround:#f6f4f2; --panel:#ffffff; --panel2:#f6f6f4; --line:#ececea; --line2:#dededb;
@@ -58,17 +58,25 @@ body.hide-costs .costable{display:none!important}
 .srcbar button{border:none;background:none;padding:6px 14px;font-size:12.5px;font-weight:500;color:var(--sub);display:flex;align-items:center;gap:7px;border-radius:7px}
 .srcbar button.on{background:var(--hv);color:var(--hvink);font-weight:600}
 .srcbar button .k{font-family:var(--mono);font-size:9px;opacity:.7}
-.tb-btn{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:8px 15px;font-size:12.5px;font-weight:500}
+.tb-btn{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:8px 15px;font-size:12.5px;font-weight:500;white-space:nowrap}
+/* every control in the board tool row shares one height so the row reads as a
+   single band rather than a ragged pile of differently-sized boxes */
+.toolrow .tb-btn,.toolrow .expmenu>summary{height:34px;display:inline-flex;align-items:center;gap:6px;padding:0 14px;border-radius:9px}
 #btnAdd{background:var(--hv);border-color:var(--hv);color:var(--hvink);font-weight:600}
 #btnAdd:hover{background:var(--hv2);border-color:var(--hv2)}
 .tb-btn:hover{background:var(--panel2)}
 #status{font-size:11.5px;color:var(--sub)}
 .colourpill{font-size:9.5px;font-weight:800;border:1px solid var(--hv-line);color:var(--hv);border-radius:20px;padding:3px 11px}
 
-.wrap{max-width:1260px;margin:0 auto;padding:20px}
+.wrap{--gutter:20px;max-width:1260px;margin:0 auto;padding:var(--gutter)}
 .hidden{display:none!important}
 
+/* headline tiles: five across when there's room, then 3 → 2 → 1 in even steps.
+   The old fixed 5-column grid squashed the numbers at middling widths. */
 .summary{display:grid;grid-template-columns:1.4fr repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media (max-width:1240px){.summary{grid-template-columns:repeat(4,1fr)}.summary .stat.hero{grid-column:span 4}}
+@media (max-width:900px){.summary{grid-template-columns:repeat(2,1fr)}.summary .stat.hero{grid-column:span 2}}
+@media (max-width:480px){.summary{grid-template-columns:1fr}.summary .stat.hero{grid-column:span 1}}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
 .stat .n{font-family:var(--cond);font-size:27px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
 .stat .l{font-size:11px;font-weight:500;color:var(--sub);margin-top:6px;font-weight:600}
@@ -91,23 +99,39 @@ body.hide-costs .costable{display:none!important}
 .rfield input{width:100%;border:none;background:none;color:var(--ink);padding:9px 10px;font-family:var(--mono);font-size:13px;font-weight:600}
 .rates-note{grid-column:1/-1;font-size:11px;color:var(--faint)}
 
-.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;position:sticky;top:calc(var(--topbarH,52px) + 10px);z-index:30;background:var(--panel);padding:10px 0}
+/* The board chrome is TWO fixed rows — a tab strip and a tool row — never one
+   wrapping soup. Splitting them means widening/narrowing the window can only
+   reflow the tool row; tabs stay put and scroll sideways instead of wrapping.
+   Full-bleed side padding (negative margin + matching padding) so scrolled
+   content can never peek through the sticky bar's gutters. */
+.controls{display:flex;flex-direction:column;gap:0;margin:0 calc(-1 * var(--gutter,20px)) 16px;position:sticky;
+  top:calc(var(--topbarH,52px) + var(--panelInset));z-index:30;background:var(--panel);padding:2px var(--gutter,20px) 10px;
+  box-shadow:0 10px 12px -12px rgba(0,0,0,.22)}
+.tabsrow{overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--line);
+  scrollbar-width:none;-ms-overflow-style:none;margin-bottom:10px}
+.tabsrow::-webkit-scrollbar{display:none}
+/* when the strip is wider than the row, fade the cut edge so it reads as
+   "scroll me" rather than "a tab got chopped off" */
+.tabsrow.ovf-r{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent)}
+.tabsrow.ovf-l{-webkit-mask-image:linear-gradient(90deg,transparent,#000 34px);mask-image:linear-gradient(90deg,transparent,#000 34px)}
+.tabsrow.ovf-l.ovf-r{-webkit-mask-image:linear-gradient(90deg,transparent,#000 34px,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(90deg,transparent,#000 34px,#000 calc(100% - 34px),transparent)}
+.toolrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;row-gap:8px}
 /* Laural content tabs: plain text with an active underline, no box */
-.tabs{display:flex;gap:4px;background:none;border:none;border-bottom:1px solid var(--line);border-radius:0;overflow:visible}
-.tabs button{border:none;background:none;padding:9px 14px 11px;font-size:13px;font-weight:500;color:var(--sub);position:relative}
+.tabs{display:flex;gap:2px;background:none;border:none;border-radius:0;overflow:visible;width:max-content;min-width:100%}
+.tabs button{border:none;background:none;padding:9px 13px 11px;font-size:13px;font-weight:500;color:var(--sub);position:relative;white-space:nowrap;flex:none}
 .tabs button:hover{color:var(--ink)}
 .tabs button.on{background:none;color:var(--ink);font-weight:600}
-.tabs button.on::after{content:'';position:absolute;left:12px;right:12px;bottom:-1px;height:2px;background:var(--ink);border-radius:2px}
-.chk{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--sub);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 13px;cursor:pointer}
-.searchwrap{display:flex;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.searchwrap input{border:none;background:none;color:var(--ink);padding:9px 12px;font-size:12.5px;width:210px;font-family:inherit}
+.tabs button.on::after{content:'';position:absolute;left:11px;right:11px;bottom:0;height:2px;background:var(--ink);border-radius:2px}
+.chk{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--sub);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:0 13px;height:34px;cursor:pointer;white-space:nowrap}
+.searchwrap{display:flex;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;height:34px}
+.searchwrap input{border:none;background:none;color:var(--ink);padding:0 12px;font-size:12.5px;width:168px;min-width:0;font-family:inherit;height:100%}
 .searchwrap input::placeholder{color:var(--faint)}
 .searchwrap button{border:none;background:none;color:var(--faint);padding:0 10px;font-size:12px;display:none}
 .searchwrap.hasq button{display:block}
 /* "Jump to day…" quick-nav select — same chrome as the search box */
 .dayjump{appearance:none;-webkit-appearance:none;background:var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23999'/%3E%3C/svg%3E") no-repeat right 10px center;
   border:1px solid var(--line);border-radius:9px;color:var(--sub);cursor:pointer;
-  font-family:inherit;font-size:12.5px;padding:9px 26px 9px 12px;max-width:210px}
+  font-family:inherit;font-size:12.5px;padding:0 26px 0 12px;height:34px;max-width:158px}
 .dayjump:hover{color:var(--ink);background-color:var(--panel2)}
 /* landing flash after a jump — a brief ring so the eye finds the card */
 .daycard.jumpflash{animation:jumpflash 1.7s ease}
@@ -116,9 +140,12 @@ body.hide-costs .costable{display:none!important}
 .strip.hit{outline:2px solid var(--hv);outline-offset:-2px}
 .chk input{accent-color:var(--hv)}
 .controls .grow{flex:1}
-.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--faint)}
+/* the time-of-day key sits quietly at the far right of the tool row and is the
+   first thing to drop when the row runs out of space */
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--faint);margin-left:auto;padding-left:6px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .legend i{width:4px;height:13px;border-radius:2px;display:inline-block}
+@media (max-width:1150px){.legend{display:none}}
 
 .daycard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px;overflow:hidden}
 .daycard.has-stunts{border-color:var(--hv-line);border-left:4px solid var(--hv)}
@@ -380,8 +407,11 @@ td .daylist{display:flex;gap:4px;flex-wrap:wrap}
 /* Split crowd panel (day board SA chip) */
 #splitBody{padding:16px 18px}
 .splitpool{display:flex;align-items:center;gap:14px;margin-bottom:14px}
-.splitpool-n{font-family:var(--cond);font-size:38px;line-height:1;font-weight:800;color:var(--crowd);background:var(--crowd-dim);border-radius:11px;padding:8px 16px;min-width:64px;text-align:center}
+.splitpool-n{font-family:var(--cond);font-size:38px;line-height:1;font-weight:800;color:var(--crowd);background:var(--crowd-dim);border-radius:11px;padding:8px 16px;min-width:64px;text-align:center;transition:color .15s,background .15s}
+.splitpool.done .splitpool-n{color:#1f9d5b;background:rgba(31,157,91,.14)}
+.splitpool.over .splitpool-n{color:#c0392b;background:rgba(192,57,43,.14)}
 .splitpool-l{font-size:13px;font-weight:700;color:var(--ink);display:flex;flex-direction:column;gap:2px}
+.splitpool-l b{font-weight:800}
 .splitpool-l small{font-size:11px;font-weight:500;color:var(--sub)}
 .splitchars{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
 .splitrow input[type=number]{width:60px}
@@ -535,14 +565,12 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
 @media (max-width:920px){
   /* scene-row reflow lives at the END of this file (after the column-visibility
      rule that re-declares the strip grid) so it isn't overridden */
-  .summary{grid-template-columns:1fr 1fr}
-  .stat.hero{grid-column:1/-1}
   .controls{position:static}
   .notebtn{font-size:17px;padding:10px}
 }
 @media (max-width:640px){
   body{font-size:13px}
-  .wrap{padding:12px}
+  .wrap{--gutter:12px}
   .topbar{padding:8px 12px;gap:8px}
   .brand small{display:none}
   .brand{font-size:19px}
@@ -558,7 +586,16 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
   .tabs button{flex:1;padding:10px 8px;white-space:nowrap}
   .searchwrap{width:100%}
   .searchwrap input{width:100%;flex:1;padding:11px 12px}
-  .chk{flex:1;justify-content:center;padding:10px 8px}
+  /* phone: proper 42px tap targets, and the fields go full-width rather than
+     leaving stranded half-rows */
+  .chk{flex:1;justify-content:center;padding:10px 8px;height:auto;min-height:42px}
+  /* in the board tool row the checkbox keeps its natural width, so the buttons
+     beside it wrap cleanly instead of being pushed against the edge */
+  .toolrow .chk{flex:0 1 auto}
+  .toolrow .tb-btn,.toolrow .expmenu>summary{height:auto;min-height:42px;padding:0 13px}
+  .searchwrap{height:42px;flex:1 1 100%}
+  .searchwrap input{width:100%}
+  .dayjump{height:42px;max-width:none;flex:1 1 46%}
   .legend{display:none}
   .dh-top{gap:8px}
   .ddate{font-size:20px}
@@ -612,10 +649,19 @@ tr.adjrow td{background:rgba(232,194,104,.05)}
   overflow-y:auto;padding:12px;background:transparent;border-right:none;display:flex;flex-direction:column;gap:3px;
   transition:width .18s ease,padding .18s ease}
 
-/* page-header bar inside the floating panel — toggle + breadcrumbs + controls */
-.pagebar{position:sticky;top:10px;z-index:35;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+/* page-header bar inside the floating panel — toggle + breadcrumbs + controls.
+   It sticks 10px down (the panel's inset), so the 10px band above it is masked
+   by .layout::before — otherwise scrolled content shows through that sliver and
+   looks like the page is bleeding out of the top of the panel. */
+.pagebar{position:sticky;top:var(--panelInset);z-index:35;display:flex;align-items:center;gap:10px;flex-wrap:nowrap;
   padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);border-radius:14px 14px 0 0}
-.pagebar .grow{flex:1}
+.layout::before{content:'';position:fixed;top:0;left:0;right:0;height:var(--panelInset);background:var(--surround);z-index:36;pointer-events:none}
+.pagebar .grow{flex:1;min-width:0}
+/* the right-hand cluster stays together and keeps its size; the breadcrumb is
+   the only thing allowed to give way, so the bar never breaks onto two rows */
+.pagebar>*:not(.crumbs){flex-shrink:0}
+.pagebar .crumbs{flex-shrink:1}
+@media (max-width:1080px){.pagebar .colourpill{display:none}}
 .pagebar-toggle{width:32px;height:32px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);
   color:var(--sub);display:grid;place-items:center;flex-shrink:0}
 .pagebar-toggle:hover{background:var(--panel2);color:var(--ink)}
@@ -645,7 +691,9 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 /* ---- mobile / tablet: the sidebar becomes a slide-over drawer, the panel
    goes full-width. The pagebar toggle (☰) opens it; the scrim closes it. ---- */
 @media (max-width:820px){
-  .layout{display:block;background:var(--panel)}
+  .layout{display:block;background:var(--panel);--panelInset:0px}
+  .layout::before{display:none} /* no inset to mask once the panel is full-bleed */
+  .pagebar{border-radius:0;flex-wrap:wrap}
   .maincol{margin:0;border:none;border-radius:0;min-height:100vh}
   .sidebar{position:fixed;top:0;left:0;height:100dvh;width:82vw;max-width:300px;z-index:60;
     background:var(--panel);border-right:1px solid var(--line);box-shadow:2px 0 24px rgba(0,0,0,.18);
@@ -1139,14 +1187,28 @@ body.pdf-docked .dh-top button,body.pdf-docked .dh-top a,body.pdf-docked .dh-top
 .ps-hcat.people{border-color:rgba(76,195,138,.4);color:#4cc38a}
 .ps-htext{flex:1;min-width:0}
 .ps-hwho{flex:none;font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap}
-/* per-production column visibility on the day board */
-.colhead,.strip{grid-template-columns:5px 84px 46px 1fr var(--w-cast,138px) var(--w-stunt,158px) var(--w-crowd,92px) 34px}
+/* per-production column visibility + widths on the day board */
+.colhead,.strip{grid-template-columns:5px var(--w-scene,84px) 46px minmax(0,1fr) var(--w-cast,138px) var(--w-stunt,158px) var(--w-crowd,92px) 34px}
 .cols-nocast{--w-cast:0px}
 .cols-nostunts{--w-stunt:0px}
 .cols-nocrowd{--w-crowd:0px}
 .cols-nocast .colhead>:nth-child(5),.cols-nocast .strip>:nth-child(5){display:none}
 .cols-nostunts .colhead>:nth-child(6),.cols-nostunts .strip>:nth-child(6){display:none}
 .cols-nocrowd .colhead>:nth-child(7),.cols-nocrowd .strip>:nth-child(7){display:none}
+/* drag-to-resize grips sit on each header column's right edge */
+.colhead div{position:relative}
+.colgrip{position:absolute;top:1px;bottom:1px;width:11px;cursor:col-resize;z-index:5;display:flex;justify-content:center;align-items:stretch}
+.colgrip.gr-right{right:-5px}
+.colgrip.gr-left{left:-5px}
+.colgrip::after{content:"";width:2px;border-radius:2px;background:transparent;transition:background .12s}
+.colhead:hover .colgrip::after{background:var(--line2)}
+.colgrip:hover::after,.colgrip.drag::after{background:var(--hv)}
+/* quick show/hide menu button, in the header's trailing cell */
+.colhead .colmenu-cell{padding:0;display:flex;align-items:center;justify-content:center}
+.colmenu-btn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line2);border-radius:6px;background:var(--panel2);color:var(--faint);cursor:pointer;padding:0}
+.colmenu-btn:hover{color:var(--ink);border-color:var(--hv-line)}
+.colmenu-btn .ic{width:13px;height:13px}
+.ctxitem .ic{width:14px;height:14px}
 
 /* ---- schedule switcher (top-bar pill dropdown) ---- */
 .colourpill{cursor:pointer;user-select:none}
@@ -1388,7 +1450,8 @@ body.hide-costs #statusBar .costable{display:none}
 /* 821–960px (small laptops): keep the desktop sidebar but drop the floating
    panel's outer margin so the content has room. The full drawer treatment is
    the ≤820px block above. */
-@media (max-width:960px) and (min-width:821px){.maincol{margin:0;border-radius:0;border:none}}
+@media (max-width:960px) and (min-width:821px){.layout{--panelInset:0px}.maincol{margin:0;border-radius:0;border:none}
+  .pagebar{border-radius:0}.layout::before{display:none}}
 
 /* unnamed-SA queue — visually distinct from real briefs (work still to do) */
 .anoncard{border-style:dashed;border-color:#d9b978}
@@ -1538,6 +1601,15 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .seg.cards button{background:var(--panel2);border:1px solid var(--line2)!important;border-radius:9px;padding:8px 13px}
 .seg.cards button.on{background:var(--hv);border-color:var(--hv)!important;color:var(--hvink)}
 
+/* Laptop-width scene rows: the fixed cast/stunt/crowd columns are generous on a
+   big screen but starve the description on a 1000–1100px window, so shrink the
+   DEFAULTS here (the per-production width vars still override, and a hidden
+   column is still 0px). ============================================================ */
+@media (min-width:821px) and (max-width:1150px){
+  .colhead,.strip{grid-template-columns:5px var(--w-scene,72px) 40px minmax(0,1fr) var(--w-cast,100px) var(--w-stunt,112px) var(--w-crowd,74px) 30px}
+  .colhead div,.strip>div{padding-left:8px;padding-right:8px}
+}
+
 /* ============================================================
    Mobile scene-row reflow — MUST be last: the column-visibility rule
    (.colhead,.strip{grid-template-columns:…}) re-declares the strip grid
@@ -1631,41 +1703,81 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
   font-family:var(--body);font-size:12.5px;padding:5px 8px;width:96px}
 .cbdstat{font-size:11.5px;color:var(--sub);font-weight:500}
 
-/* ---- Columns builder (reorder + show/hide) ------------------------------- */
-.cbcolwrap{position:relative;display:inline-flex}
-.cbcolpanel{position:absolute;top:calc(100% + 8px);left:0;z-index:30;width:250px;
-  background:var(--panel);border:1px solid var(--line2);border-radius:12px;
-  box-shadow:0 10px 30px rgba(0,0,0,.28);padding:12px}
-.cbcolhd{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-  color:var(--sub);margin-bottom:8px}
-.cbcollist{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
-.cbcolrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
-  background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px}
+/* ---- Setup step (configure the breakdown before generating) -------------- */
+.cbsetup{max-width:980px;margin:0 auto}
+/* Reopened over a finished breakdown, the same controls sit inside a popup:
+   the dialog box sets the width, so the panel fills it and drops its own. */
+.cbsetupbox{max-width:900px;width:94%}
+#cbSetupBody{padding:16px 18px}
+.cbsetup-modal{max-width:none;margin:0}
+.cbsetuphd{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  flex-wrap:wrap;margin-bottom:16px}
+.cbsetuphd h2{margin:0;font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+.cbsetupsub{margin:5px 0 0;font-size:13px;color:var(--sub);max-width:520px;line-height:1.45}
+.cbgenerate{white-space:nowrap;background:var(--hv);color:var(--hvink);border-color:var(--hv);
+  font-weight:600;padding:9px 18px}
+.cbgenerate:hover{filter:brightness(1.05)}
+.cbsetupgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.cbsetupgrid{grid-template-columns:1fr}}
+.cbcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.cbcard h3{margin:0 0 4px;font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--ink)}
+.cbcardhint{margin:0 0 10px;font-size:11.5px;color:var(--sub);line-height:1.4}
+.cbfield{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--sub);
+  font-weight:500;margin-bottom:10px}
+.cbfield:last-child{margin-bottom:0}
+.cbfield input[type=text],.cbfield select{background:var(--panel2);border:1px solid var(--line2);
+  border-radius:8px;color:var(--ink);font-family:var(--body);font-size:13px;padding:7px 9px;width:100%}
+.cbcard .chk{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);
+  font-weight:500;padding:4px 0}
+.cbstd{margin-top:10px;padding:6px 11px;font-size:12px}
+
+/* Columns list — draggable rows */
+.cbcollist{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:5px}
+.cbcolrow{display:flex;align-items:center;gap:9px;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:7px 10px;
+  cursor:grab;user-select:none;transition:border-color .12s,transform .08s,box-shadow .12s}
+.cbcolrow:hover{border-color:var(--line2);box-shadow:0 1px 0 rgba(0,0,0,.15)}
+.cbcolrow:active{cursor:grabbing}
 .cbcolrow.off{opacity:.55}
-.cbcolname{font-size:12.5px;font-weight:500;color:var(--ink)}
+.cbcolrow.cbdragging{opacity:.4}
+.cbcolrow.cbdragover{border-color:var(--hv);box-shadow:0 -2px 0 var(--hv) inset}
+.cbcolgrip{color:var(--faint);font-size:14px;line-height:1;letter-spacing:1px;cursor:grab}
+.cbcolname{flex:1;font-size:12.5px;font-weight:500;color:var(--ink)}
 .cbcolhint{font-style:normal;font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.04em;color:var(--sub);margin-left:6px}
-.cbcolbtns{display:flex;align-items:center;gap:4px}
-.cbcolmv{width:24px;height:24px;line-height:1;border:1px solid var(--line2);border-radius:6px;
-  background:var(--panel);color:var(--ink);font-size:13px;cursor:pointer;padding:0}
-.cbcolmv:hover:not([disabled]){border-color:var(--accent,#b58900);background:var(--panel2)}
-.cbcolmv[disabled]{opacity:.3;cursor:default}
-.cbcolvis{display:inline-flex;align-items:center;margin-left:3px}
+.cbcolvis{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sub);
+  font-weight:600;text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
 .cbcolvis input{margin:0}
-.cbcolnotes{font-size:12.5px;color:var(--sub);font-weight:500;display:flex;align-items:center;gap:7px}
-.cbcolfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
-.cbcoltip{font-size:10.5px;color:var(--sub);line-height:1.3;max-width:150px}
-.cbcolfoot .tb-btn{padding:6px 11px;font-size:12px}
+
+/* Appearance — swatches + live preview */
+.cbswatches{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.cbsw{width:26px;height:26px;border-radius:7px;border:2px solid transparent;
+  box-shadow:0 0 0 1px var(--line2);cursor:pointer;padding:0}
+.cbsw.on{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.cbswcustom{display:inline-flex;width:26px;height:26px;border-radius:7px;overflow:hidden;
+  box-shadow:0 0 0 1px var(--line2);cursor:pointer}
+.cbswcustom input[type=color]{width:34px;height:34px;margin:-4px;border:0;padding:0;background:none;cursor:pointer}
+.cbappearprev{margin-top:12px;border:1px solid var(--line2);border-radius:9px;overflow:hidden;background:#fff}
+.cbappearband{text-align:center;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  font-size:14px;padding:12px 8px}
+.cbappearsub{font-size:10.5px;color:#555;text-align:center;padding:7px 10px;background:#fff}
+.cbsetupfoot{display:flex;justify-content:flex-end;margin-top:16px}
 
 .cbdoc{background:#fff;color:#000;border:1px solid var(--line);border-radius:var(--r);
   padding:14px;overflow:hidden}
 .cbhead{text-align:center;padding:2px 0 10px}
-.cbtitle{font-family:'Cinzel',Georgia,serif;font-size:17px;font-weight:600;letter-spacing:.14em;
+/* the Appearance step can paint the header as a branded band; --cb-accent and
+   --cb-accent-ink are set inline on .cbdoc so they travel into the PDF clone */
+.cbhead-band{background:var(--cb-accent,transparent);border-radius:6px;
+  padding:9px 0 8px;margin-bottom:8px}
+.cbhead-band .cbtitle,.cbhead-band .cbsubtitle{color:var(--cb-accent-ink,#000)}
+.cbtitle{font-family:var(--cb-font,'Montserrat',Arial,sans-serif);font-size:17px;font-weight:700;letter-spacing:.14em;
   text-transform:uppercase;color:#000}
 .cbsubtitle{font-size:11.5px;font-weight:700;letter-spacing:.03em;margin-top:5px;color:#000}
 
+.cbdoc,.cbtable{font-family:var(--cb-font,'Montserrat',Arial,sans-serif);text-transform:uppercase}
 .cbtable{width:100%;border-collapse:collapse;table-layout:fixed;
-  font-family:Arial,Helvetica,sans-serif;font-size:9.5px;line-height:1.32;color:#000;background:#fff}
+  font-family:var(--cb-font,'Montserrat',Arial,sans-serif);font-size:9.5px;line-height:1.32;color:#000;background:#fff}
 .cbtable th,.cbtable td{border:1px solid #000;padding:2px 4px;vertical-align:top;text-align:left;
   overflow-wrap:anywhere}
 .cbtable thead th{background:#fff;font-size:9px;font-weight:700;letter-spacing:.06em;
@@ -1675,6 +1787,9 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
    sticking to a fixed slot. Positional nth-child widths would size whatever
    now sits in that position, so they are deliberately not used here. */
 .cbfee,.cbcost{font-size:9px}
+/* the breakdown is a printed A4 document, so below tablet width let it scroll
+   sideways at its natural size instead of crushing the column headings */
+@media (max-width:900px){.cbdoc{overflow-x:auto;-webkit-overflow-scrolling:touch}.cbdoc .cbtable{min-width:720px}}
 .cbcost{text-align:right!important;white-space:nowrap;font-variant-numeric:tabular-nums}
 .cbfee{white-space:nowrap}
 .cbfeesel{width:100%;max-width:100%;font:inherit;font-size:8.5px;color:#000;background:#fff;
@@ -1701,6 +1816,19 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .cbdaycell .cbsub{margin-top:2px}
 .cbno{text-align:center!important;width:3.5%}
 .cbname{font-weight:600}
+/* "From above" toggle — screen-only editing furniture. It stays out of the way
+   on an ordinary line (revealed on row hover, like the delete affordance) and
+   reads as a quiet purple badge once a line is marked as carried from an
+   earlier scene. Space is reserved either way, so revealing it never nudges the
+   name. */
+.cbabove{display:inline-flex;align-items:center;gap:4px;margin-left:8px;
+  font-size:7px;font-weight:700;letter-spacing:.05em;white-space:nowrap;cursor:pointer;
+  color:#9a9aa2;padding:1px 6px 1px 4px;border:1px solid transparent;border-radius:10px;
+  opacity:0;transition:opacity .12s ease,background .12s ease,border-color .12s ease}
+.cbscene:hover .cbabove,.cbabove:focus-within{opacity:.6}
+.cbabove:hover{opacity:1;background:#f4f1fb;border-color:#e0d8f4;color:#5b3fa8}
+.cbabove:has(input:checked){opacity:1;background:#efe9fb;border-color:#cbbdf0;color:#5b3fa8}
+.cbabove input{accent-color:#5b3fa8;width:11px;height:11px;margin:0;cursor:pointer}
 .cbnote{font-size:9px}
 .cbna{font-weight:400;color:#444}
 .cbpend{color:#a35d19;font-weight:600}
@@ -1762,7 +1890,7 @@ body.printing-cbdoc{background:#fff}
 
 /* Nothing that only exists for editing may reach the printer or the PDF */
 @media print{
-  body.printing-cbdoc .cbtier,body.printing-cbdoc .cbdel{display:none!important}
+  body.printing-cbdoc .cbtier,body.printing-cbdoc .cbdel,body.printing-cbdoc .cbabove{display:none!important}
   body.printing-cbdoc .cbedit,body.printing-cbdoc td.cbedit{background:transparent!important;box-shadow:none!important}
 }
 
@@ -1792,6 +1920,93 @@ body.printing-cbdoc{background:#fff}
 .cbcombo .cbcombono{font-weight:700;margin-right:5px;min-width:12px;display:inline-block;text-align:right}
 .cbcombo .cbcombono:empty::before{content:'0';color:#bbb;font-weight:600}
 .cbcombo.cbnamecell{padding-right:16px!important}
+
+/* ---- The trailing "add another crowd line" row ---------------------------
+   This document is authored on screen but LIVES as an export (Sheets/Excel/CSV
+   and the printed PDF), so the add affordance has to be unmistakably furniture:
+   a real labelled button, never a bare glyph that could read as data. The old
+   "+" pill sat inside the number column, so it looked like a value and printed
+   like one. */
+.cbaddrow>td{background:#fbfcfe}
+.cbaddrow:hover>td{background:#f4f7ff}
+.cbaddbtn{
+  display:inline-flex;align-items:center;gap:5px;
+  font:inherit;font-size:11px;font-weight:600;letter-spacing:.01em;
+  color:#5b6b86;background:#fff;
+  border:1px dashed #c3cfe2;border-radius:6px;
+  padding:1px 8px 1px 6px;cursor:pointer;line-height:1.5;
+  transition:background .12s,border-color .12s,color .12s}
+.cbaddbtn .cbaddplus{font-size:13px;font-weight:800;line-height:1;color:#2f6fed}
+.cbaddrow:hover .cbaddbtn,.cbaddbtn:hover{
+  background:#eff4ff;border-color:#2f6fed;border-style:solid;color:#1a4fc0}
+.cbaddbtn:focus-visible{outline:2px solid #2f6fed;outline-offset:1px}
+/* Unarmed, the empty count/name editors stay out of the way so the row reads as
+   a single clear action rather than a scatter of empty boxes. The "Not yet
+   assessed" placeholder is the exception — that is real information. */
+.cbaddrow .cbcombono,
+.cbaddrow .cbnametext:not(.cbph),
+.cbaddrow td.cbno.cbedit{color:transparent}
+.cbaddrow .cbcombono:empty::before{content:''}
+/* Armed — the button gives way to a live count field. The field deliberately
+   takes the SAME amber editing highlight every other editable cell in this
+   table uses (see .cbtable td.cbedit:focus above): a second, different-coloured
+   focus style would have taught two rules for one thing, and the amber already
+   means "you are typing here". The row is tinted to match, which is what leads
+   the eye across from the button (CROWD CHARACTER column) to the caret, which
+   in the split layout lands in the narrow NO. column well to its left. */
+.cbaddrow.cbarmed .cbaddbtn{display:none}
+/* Deep enough to be seen at full-page scale, and distinct from the cell hover
+   wash — a tint identical to hover would carry no meaning of its own. */
+.cbaddrow.cbarmed>td{background:#fdf4dd}
+.cbaddrow.cbarmed .cbcombono,
+.cbaddrow.cbarmed .cbnametext,
+.cbaddrow.cbarmed td.cbno.cbedit{color:inherit}
+.cbaddrow.cbarmed td.cbno.cbedit{text-align:left}
+/* The merged column's count is a span, so it never picked up the table's
+   td-level focus style — give it the same amber treatment by hand. */
+.cbcombo .cbcombono:focus{
+  background:#fff8d6;box-shadow:0 0 0 2px #b58900;border-radius:2px;outline:none}
+/* The "people" hint only earns its place in the merged column, which is wide
+   enough to hold it on one line. The NO. column is ~30px wide, so the same hint
+   wrapped to one letter per line and shoved the row height around — the amber
+   field and the row tint carry the message there instead. */
+/* Wide enough to hold the hint outright, so the box does not visibly shrink the
+   instant the first digit is typed. */
+.cbaddrow.cbarmed .cbcombono{min-width:4.6em}
+.cbaddrow.cbarmed .cbcombono:empty::after{
+  content:'people';color:#b9a25a;font-weight:600;font-size:10px;
+  margin-left:4px;letter-spacing:.02em;text-transform:none}
+/* On a scene nobody has assessed yet, the row already carries the amber
+   "Not yet assessed" marker immediately to the right. A second warm-toned word
+   butted against it reads as one run-on phrase, so the hint stands down and
+   lets the more important message speak. */
+.cbaddrow.cbfirst.cbarmed .cbcombono:empty::after{content:''}
+/* Belt and braces: the add row is stripped from the PDF clone outright, but if
+   anything ever reaches a printer it must leave no trace. */
+@media print{
+  .cbaddonly{display:none!important}
+  .cbaddbtn{display:none!important}
+  .cbcombo .cbcombono:empty::before{content:''!important}
+}
+
+/* ---- Spreadsheet-style highlighter ---------------------------------------
+   A manual fill an AD sweeps across cells. The colour rides in a --cbhl custom
+   property so any palette colour works. The fill replaces the cell background
+   (like a spreadsheet fill), which keeps the dark cell text readable. */
+.cbtable td.cbhl,.cbtable th.cbhl{background:var(--cbhl)!important}
+/* Highlight mode: the whole table becomes a canvas — crosshair cursor, and text
+   selection is suppressed so a drag paints instead of selecting words. */
+.cbtable.cbhlmode{cursor:crosshair;user-select:none}
+.cbtable.cbhlmode .cbedit{cursor:crosshair}
+.cbtable.cbhlmode .cbhth:hover{background:rgba(47,111,237,.12)}
+/* The palette strip in the top bar. */
+.cbhlpalette{display:inline-flex;align-items:center;gap:5px;margin-left:6px}
+.cbhlpalette.hidden{display:none}
+.cbhlsw{width:20px;height:20px;border-radius:5px;border:1px solid rgba(0,0,0,.2);cursor:pointer;padding:0;line-height:1;font-size:12px}
+.cbhlsw.on{outline:2px solid #111;outline-offset:1px}
+.cbhlerase{background:#fff;color:#555}
+.cbhlclear{margin-left:2px}
+#cbdHlToggle.on{background:#111;color:#fff}
 .cbnametext.cbph:empty::before{content:attr(data-ph);color:#a35d19;font-weight:600}
 .cbnametext.cbph:empty:focus::before{opacity:.35}
 @media print{
