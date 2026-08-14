@@ -39,7 +39,7 @@ create table if not exists day_edits (
   owner uuid not null references auth.users(id) on delete cascade default auth.uid(),
   production_id uuid references productions(id) on delete cascade,
   key text not null,
-  kind text not null check (kind in ('cday','adj')),
+  kind text not null check (kind in ('cday','adj','sced','stuntday','stuntcfg','notes','briefs','dayloc','rgroups')),
   data jsonb not null,
   updated_at timestamptz not null default now(),
   unique nulls not distinct (owner, production_id, key, kind)
