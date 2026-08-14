@@ -377,6 +377,24 @@ td .daylist{display:flex;gap:4px;flex-wrap:wrap}
 .reconcile{font-size:11px;font-weight:600;border-radius:7px;padding:6px 11px;display:inline-block;margin-top:8px}
 .reconcile.ok{background:rgba(76,195,138,.12);color:#4cc38a}
 .reconcile.warn{background:var(--notebg);color:var(--note)}
+/* Split crowd panel (day board SA chip) */
+#splitBody{padding:16px 18px}
+.splitpool{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.splitpool-n{font-family:var(--cond);font-size:38px;line-height:1;font-weight:800;color:var(--crowd);background:var(--crowd-dim);border-radius:11px;padding:8px 16px;min-width:64px;text-align:center}
+.splitpool-l{font-size:13px;font-weight:700;color:var(--ink);display:flex;flex-direction:column;gap:2px}
+.splitpool-l small{font-size:11px;font-weight:500;color:var(--sub)}
+.splitchars{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+.splitrow input[type=number]{width:60px}
+.splitempty{font-size:12px;color:var(--sub);padding:10px 2px}
+.splitspact{font-size:11px;color:var(--sub);margin-top:8px}
+.splitapply{margin-top:16px;display:flex;justify-content:flex-end}
+.splitapply-btn{background:var(--crowd);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:800;font-size:13px;cursor:pointer}
+.splitapply-btn:hover{filter:brightness(1.06)}
+/* crowd chip drag hint (move / remove) */
+#crDragHint{position:fixed;z-index:200;pointer-events:none;font-size:11px;font-weight:700;max-width:260px;
+  background:var(--panel);border:1px solid var(--line2);color:var(--ink);border-radius:7px;padding:5px 9px;box-shadow:0 4px 16px rgba(0,0,0,.32)}
+#crDragHint.move{border-color:var(--hv);color:var(--hv)}
+#crDragHint.remove{background:#c0392b;border-color:#c0392b;color:#fff}
 td.dim{color:var(--line2)}
 .supgrid{display:flex;flex-direction:column;gap:7px}
 .supgrid .chk2{display:flex;font-size:11.5px}
@@ -1282,8 +1300,13 @@ span.briefstatus{background-image:none;padding-right:12px;cursor:default;display
 /* a phone has less width, so the same message needs more lines before it's cut */
 @media (max-width:640px){#statusBar{bottom:14px;padding:10px 8px 10px 14px;font-size:12px}
   #statusBar #status{-webkit-line-clamp:5}}
-#statusBar button{background:none;border:none;color:#9a9ca1;font-size:13px;padding:4px 8px;border-radius:8px}
+#statusBar button{background:none;border:none;color:#9a9ca1;font-size:13px;padding:4px 8px;border-radius:8px;cursor:pointer}
 #statusBar button:hover{color:#fff;background:rgba(255,255,255,.08)}
+#statusBar #statusUndo{color:#fff;font-weight:700;font-size:12px;border:1px solid rgba(255,255,255,.24);padding:4px 12px;margin-left:2px;flex:none}
+#statusBar #statusUndo:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.4)}
+#statusBar #statusUndo.hidden{display:none}
+#statusBar{transition:opacity .26s ease,transform .26s ease}
+#statusBar.fadeout{opacity:0;transform:translateX(-50%) translateY(8px);pointer-events:none}
 body.hide-costs #statusBar .costable{display:none}
 
 /* sign-in gate — Laural's welcome screen */
