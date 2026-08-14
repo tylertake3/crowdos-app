@@ -11,3 +11,4 @@ export * from "./parser";
 export * from "./merge";
 export * from "./revise";
 export * from "./dance";
+export * from "./breakdown-doc";

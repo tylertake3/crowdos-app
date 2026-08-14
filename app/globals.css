@@ -1551,3 +1551,144 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .cdgapnote{margin:10px 0 0;border:1px solid var(--line2);border-radius:10px;background:var(--panel2);
   padding:10px 12px;font-size:12px;line-height:1.55;color:var(--sub)}
 .cdgapnote b{color:var(--ink)}
+
+/* ============================================================
+   Crowd Breakdown DOCUMENT — the AD deliverable.
+   Deliberately NOT the Laural card look: this is a printed grid
+   with hairline rules, exactly as productions circulate it. It
+   stays ink-on-paper in dark mode too, because what is on screen
+   is what comes out of the printer.
+   ============================================================ */
+.cbdbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px}
+.cbdbar .grow{flex:1}
+.cbdf{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--sub);font-weight:500}
+.cbdf input{background:var(--panel2);border:1px solid var(--line2);border-radius:7px;color:var(--ink);
+  font-family:var(--body);font-size:12.5px;padding:5px 8px;width:96px}
+.cbdstat{font-size:11.5px;color:var(--sub);font-weight:500}
+
+.cbdoc{background:#fff;color:#000;border:1px solid var(--line);border-radius:var(--r);
+  padding:14px;overflow:hidden}
+.cbhead{text-align:center;padding:2px 0 10px}
+.cbtitle{font-family:'Cinzel',Georgia,serif;font-size:17px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:#000}
+.cbsubtitle{font-size:11.5px;font-weight:700;letter-spacing:.03em;margin-top:5px;color:#000}
+
+.cbtable{width:100%;border-collapse:collapse;table-layout:fixed;
+  font-family:Arial,Helvetica,sans-serif;font-size:9.5px;line-height:1.32;color:#000;background:#fff}
+.cbtable th,.cbtable td{border:1px solid #000;padding:2px 4px;vertical-align:top;text-align:left;
+  overflow-wrap:anywhere}
+.cbtable thead th{background:#fff;font-size:9px;font-weight:700;letter-spacing:.06em;
+  text-align:center;text-transform:uppercase;padding:4px 3px;position:sticky;top:0;z-index:2}
+/* column widths mirror the reference documents */
+.cbtable th:nth-child(1){width:8%}
+.cbtable th:nth-child(2){width:26%}
+.cbtable th:nth-child(3){width:6%}
+.cbtable th:nth-child(4){width:3.5%}
+.cbtable th:nth-child(5){width:21%}
+.cbtable th:nth-child(6){width:13%}
+.cbtable th:nth-child(7){width:3.5%}
+.cbtable th:nth-child(8){width:19%}
+
+.cbscnum{text-align:center!important;font-weight:700}
+.cbnum{font-size:10px}
+.cbloc{font-size:8.5px;font-weight:400;margin-top:2px}
+.cbslug{font-weight:700;font-size:9.5px}
+.cbdesc{margin-top:1px}
+.cbcast{margin-top:2px;font-size:8.5px}
+.cbdaycell{text-align:center!important;font-size:9px}
+.cbdaycell .cbsub{margin-top:2px}
+.cbno{text-align:center!important;width:3.5%}
+.cbname{font-weight:600}
+.cbnote{font-size:9px}
+.cbna{font-weight:400;color:#444}
+.cbpend{color:#a35d19;font-weight:600}
+/* a "from above" line is the same people as an earlier scene — shown so the
+   document reconciles, never counted again, so it reads as a reference */
+.cbtable .fromabove{color:#5b3fa8;font-style:italic;font-weight:500}
+.cbtable .tbc{color:#a35d19}
+.cbtable .cbrow-spact{color:#1c4fa1}
+.cbtable .cbrow-stunt,.cbtable .cbrow-child,.cbtable .cbrow-av{color:#333}
+
+.cbweek td{background:#e4e4e4;font-weight:700;font-size:9px;letter-spacing:.08em;padding:3px 6px}
+.cbday td{background:#1a1a1a;color:#fff;font-weight:700;font-size:9.5px;padding:3px 6px;white-space:nowrap}
+/* the date sits over the SCENE column and the day number over SCENE
+   DESCRIPTION, as printed — laid out rather than split across cells so a long
+   date can overflow without colliding */
+.cbdate{display:inline-block;min-width:8%;padding-right:14px}
+.cbdnum{display:inline-block}
+.cbunit td{background:#000;color:#fff;font-weight:700;font-size:9px;letter-spacing:.05em;
+  text-align:center;padding:3px 6px}
+.cbbanner td{background:#f2f2f2;font-weight:700;font-size:9px;letter-spacing:.05em;
+  text-align:center;padding:3px 6px}
+.cbtotal td,.cbwktotal td,.cbgrand td{background:#eee;font-weight:700;font-size:9px}
+.cbwktotal td{background:#d9d9d9}
+.cbgrand td{background:#c9c9c9}
+.cbtlabel{text-align:right!important;letter-spacing:.05em;white-space:nowrap}
+.cbscene:hover td{background:#f6f6f4}
+.cbtable tr.cbfirst>td{border-top:1.5px solid #000}
+
+/* Landscape, edge-to-edge — a crowd breakdown is never a portrait document */
+@page{size:auto}
+body.printing-cbdoc{background:#fff}
+@media print{
+  body.printing-cbdoc .cbdoc{border:none;border-radius:0;padding:0}
+  body.printing-cbdoc .cbtable{font-size:8px}
+  body.printing-cbdoc .cbtable thead th{position:static}
+  body.printing-cbdoc .cbtable tr{break-inside:avoid;page-break-inside:avoid}
+  body.printing-cbdoc .cbhead{padding-bottom:6px}
+}
+
+/* ---- Crowd breakdown: in-grid editing ----
+   Editable cells stay invisible until you go near them — the document has to
+   read as a document, not as a form. */
+.cbedit{outline:none;cursor:text}
+.cbtable td.cbedit:hover,.cbnamecell:hover{background:#fffdf0}
+.cbtable td.cbedit:focus-within,.cbtable td.cbedit:focus{background:#fff8d6;box-shadow:inset 0 0 0 2px #b58900}
+.cbnametext:focus{background:#fff8d6;box-shadow:0 0 0 2px #b58900;border-radius:2px}
+.cbnamecell{position:relative;padding-right:16px!important}
+.cbnametext{outline:none;cursor:text;display:inline-block;min-width:40px}
+/* tier chip — SA / Featured / Spact, click to cycle */
+.cbtier{border:1px solid #999;background:#f0f0f0;color:#333;font-family:inherit;font-size:7.5px;
+  font-weight:700;letter-spacing:.04em;border-radius:3px;padding:0 3px;margin-right:5px;
+  vertical-align:1px;line-height:1.5}
+.cbtier.t-featured{background:#fde9c8;border-color:#b58900;color:#7a5a00}
+.cbtier.t-spact{background:#dbe7fb;border-color:#1c4fa1;color:#1c4fa1}
+.cbdel{position:absolute;right:2px;top:1px;border:none;background:none;color:#bbb;font-size:9px;
+  line-height:1;padding:1px 2px;opacity:0}
+.cbscene:hover .cbdel{opacity:1}
+.cbdel:hover{color:#c0392b}
+
+/* Nothing that only exists for editing may reach the printer or the PDF */
+@media print{
+  body.printing-cbdoc .cbtier,body.printing-cbdoc .cbdel{display:none!important}
+  body.printing-cbdoc .cbedit,body.printing-cbdoc td.cbedit{background:transparent!important;box-shadow:none!important}
+}
+
+/* ---- Crowd breakdown PDF: what you see is what prints ----
+   Browsers strip backgrounds when printing by default, which would turn the
+   black day bands and grey totals white and leave the document unreadable.
+   The breakdown IS its banding, so colour is forced on for this view only. */
+@media print{
+  body.printing-cbdoc .cbdoc,
+  body.printing-cbdoc .cbdoc *{
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+  }
+  body.printing-cbdoc .cbdbar,
+  body.printing-cbdoc .noprint{display:none!important}
+  body.printing-cbdoc .cbtable thead{display:table-header-group}
+  body.printing-cbdoc .cbday,
+  body.printing-cbdoc .cbunit,
+  body.printing-cbdoc .cbweek{break-after:avoid;page-break-after:avoid}
+  body.printing-cbdoc .cbtotal,
+  body.printing-cbdoc .cbwktotal{break-before:avoid;page-break-before:avoid}
+}
+
+/* An unassessed scene says so inside the cell it needs filling in — the label
+   is placeholder text, so the fix is one click from the complaint. */
+.cbnametext.cbph:empty::before{content:attr(data-ph);color:#a35d19;font-weight:600}
+.cbnametext.cbph:empty:focus::before{opacity:.35}
+@media print{
+  body.printing-cbdoc .cbnametext.cbph:empty::before{color:#000;font-weight:400}
+}
