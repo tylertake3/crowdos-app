@@ -1989,7 +1989,10 @@ body.printing-cbdoc{background:#fff}
    assessed" placeholder is the exception — that is real information. */
 .cbaddrow .cbcombono,
 .cbaddrow .cbnametext:not(.cbph),
-.cbaddrow td.cbno.cbedit{color:transparent}
+/* The STUNTS/OTHER editors on this row are their own control, not part of the
+   "+ Add crowd" affordance — they must stay legible, or text typed into them
+   would be invisible until the next render. */
+.cbaddrow td.cbno.cbedit:not([data-cbother]){color:transparent}
 .cbaddrow .cbcombono:empty::before{content:''}
 /* Armed — the button gives way to a live count field. The field deliberately
    takes the SAME amber editing highlight every other editable cell in this
@@ -2005,7 +2008,7 @@ body.printing-cbdoc{background:#fff}
 .cbaddrow.cbarmed .cbcombono,
 .cbaddrow.cbarmed .cbnametext,
 .cbaddrow.cbarmed td.cbno.cbedit{color:inherit}
-.cbaddrow.cbarmed td.cbno.cbedit{text-align:left}
+.cbaddrow.cbarmed td.cbno.cbedit:not([data-cbother]){text-align:left}
 /* The merged column's count is a span, so it never picked up the table's
    td-level focus style — give it the same amber treatment by hand. */
 .cbcombo .cbcombono:focus{
@@ -2043,6 +2046,23 @@ body.printing-cbdoc{background:#fff}
 .cbtable.cbhlmode{cursor:crosshair;user-select:none}
 .cbtable.cbhlmode .cbedit{cursor:crosshair}
 .cbtable.cbhlmode .cbhth:hover{background:rgba(47,111,237,.12)}
+/* A scene / description / day cell spans its whole scene block, so in highlight
+   mode it IS the "highlight this scene" target — say so on hover. */
+.cbtable.cbhlmode .cbscnum:hover,
+.cbtable.cbhlmode .cbdescell:hover,
+.cbtable.cbhlmode .cbdaycell:hover{box-shadow:inset 0 0 0 2px rgba(47,111,237,.45)}
+/* The per-row grip: a thin bar down the left edge of every line, present only
+   while the pen is on. Absolutely positioned against the row, so it overlays
+   the grid instead of moving it and no column has to make space. */
+.cbtable.cbhlmode tr.cbscene{position:relative}
+.cbhlgrip{
+  position:absolute;left:0;top:0;bottom:0;width:9px;padding:0;z-index:3;
+  border:0;border-right:1px solid rgba(0,0,0,.12);
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 2px,transparent 2px 4px);
+  opacity:.35;cursor:pointer;
+}
+.cbtable.cbhlmode tr.cbscene:hover .cbhlgrip{opacity:.75}
+.cbhlgrip:hover{opacity:1!important;background:#2f6fed}
 /* The palette strip in the top bar. */
 .cbhlpalette{display:inline-flex;align-items:center;gap:5px;margin-left:6px}
 .cbhlpalette.hidden{display:none}
@@ -2053,8 +2073,17 @@ body.printing-cbdoc{background:#fff}
 #cbdHlToggle.on{background:#111;color:#fff}
 .cbnametext.cbph:empty::before{content:attr(data-ph);color:#a35d19;font-weight:600}
 .cbnametext.cbph:empty:focus::before{opacity:.35}
+/* The carried label ("(FROM ABOVE)") is written BY the document, not typed —
+   it sits next to the typeable name and reads as part of the same phrase, but
+   it is plainly not a field. */
+.cbcarried{margin-left:.35em;white-space:nowrap;pointer-events:none}
+/* An empty STUNTS/OTHER line still has to say it can be typed in. */
+.cbtable td.cbname>.cbedit:empty::before,
+.cbtable td.cbname.cbedit:empty::before{content:attr(data-ph);color:#a35d19;font-weight:600}
 @media print{
   body.printing-cbdoc .cbnametext.cbph:empty::before{color:#000;font-weight:400}
+  body.printing-cbdoc .cbtable td.cbname>.cbedit:empty::before,
+  body.printing-cbdoc .cbtable td.cbname.cbedit:empty::before{content:''}
 }
 
 /* ============================================================
