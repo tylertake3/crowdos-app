@@ -154,6 +154,12 @@ export interface DayCost {
   saCost: number;
   featCost: number;
   spactCost: number;
+  /** supplementary fees inside the day's cost (heads × per-head fee) */
+  supCost: number;
+  /** the same fees split by tier, so each card can show what it charged */
+  supSA: number;
+  supFeat: number;
+  supSpact: number;
 }
 
 // The effective day config for one character row — a row with a call and/or
@@ -172,24 +178,30 @@ export function cdDayCost(
   s: CrowdSettings = CROWD_DEFAULTS
 ): DayCost {
   let cost = 0, sa = 0, featPD = 0, spactPD = 0;
-  let saCost = 0, featCost = 0, spactCost = 0;
+  let saCost = 0, featCost = 0, spactCost = 0, supCost = 0;
+  let supSA = 0, supFeat = 0, supSpact = 0;
   const feats: Record<string, number> = {};
   const spacts: Record<string, number> = {};
   for (const ch of c.chars) {
     const n = +ch.count || 0;
-    const rowPer = cdPerHead(cdRowConfig(c, ch), ch.tier, s).per + (+(ch.sup ?? 0) || 0);
+    const sup = +(ch.sup ?? 0) || 0;
+    const rowPer = cdPerHead(cdRowConfig(c, ch), ch.tier, s).per + sup;
     cost += rowPer * n;
+    supCost += sup * n;
     if (ch.tier === "SA") {
-      sa += n; saCost += rowPer * n;
+      sa += n; saCost += rowPer * n; supSA += sup * n;
     } else if (ch.tier === "Featured") {
-      featPD += n; featCost += rowPer * n;
+      featPD += n; featCost += rowPer * n; supFeat += sup * n;
       feats[ch.name] = (feats[ch.name] || 0) + n;
     } else {
-      spactPD += n; spactCost += rowPer * n;
+      spactPD += n; spactCost += rowPer * n; supSpact += sup * n;
       spacts[ch.name] = (spacts[ch.name] || 0) + n;
     }
   }
-  return { cost, sa, featPD, spactPD, feats, spacts, saCost, featCost, spactCost };
+  return {
+    cost, sa, featPD, spactPD, feats, spacts,
+    saCost, featCost, spactCost, supCost, supSA, supFeat, supSpact,
+  };
 }
 
 // OT & early-call quantities for the day's SA rows, summed per row. Unlike
@@ -233,6 +245,14 @@ export interface SaComp {
 export interface CrowdDayEntry extends DayCost {
   saComp: SaComp;
   saChars: Record<string, number>; // named SA groups this day (name → peak count)
+  /** supplementary fee per head, by group name — carried into the calculator */
+  supBy: Record<string, number>;
+  /**
+   * What one head of each tier costs on this day BEFORE supplementary fees —
+   * exactly the figure this day's branch priced with, so anything showing a
+   * per-line cost agrees with the day total instead of re-deriving rates.
+   */
+  perHeadBy: { SA: number; Featured: number; SPACT: number };
   travel: { band: string; known: boolean; amt: number; total: number };
   chars: string;
   edited: boolean;
@@ -283,6 +303,11 @@ export function computeCrowdCosts(
     const feats: Record<string, number> = {};
     const spacts: Record<string, number> = {};
     const saChars: Record<string, number> = {}; // named SA groups
+    // Supplementary fees ride with the group, not the scene: a wig or a
+    // uniform is paid once for the day however many scenes the group is in,
+    // so the fee pools on the same identity the head count does.
+    const supBy: Record<string, number> = {};
+    const supByTier: Record<string, number> = {};
     for (const sc of d.scenes) {
       // weather-cover scenes are deliberately double-scheduled by some
       // productions — they must not add to the day's requirement
@@ -296,6 +321,14 @@ export function computeCrowdCosts(
         const t = effectiveTier(f, fallback, s);
         const into = t === "SPACT" ? spacts : t === "Featured" ? feats : saChars;
         into[f.name] = Math.max(into[f.name] || 0, f.count);
+        const sup = +(f.sup ?? 0) || 0;
+        if (sup) {
+          supBy[f.name] = Math.max(supBy[f.name] || 0, sup);
+          // costing is keyed by tier AND name: the same character name can
+          // appear on two tiers, and a fee set on one must not charge the other
+          const sk = t + "|" + f.name;
+          supByTier[sk] = Math.max(supByTier[sk] || 0, sup);
+        }
       };
       for (const f of sc.saChars || []) bucket(f, "SA");
       for (const f of sc.featured || []) bucket(f, "Featured");
@@ -309,6 +342,16 @@ export function computeCrowdCosts(
     const sa = saAnon + saNamedPD;
     const featPD = Object.values(feats).reduce((a, n) => a + n, 0);
     const spactPD = Object.values(spacts).reduce((a, n) => a + n, 0);
+    // fees the day owes, per bucket, on the pooled counts
+    const supOf = (m: Record<string, number>, tier: string): number =>
+      Object.entries(m).reduce(
+        (a, [n, ct]) => a + ct * (supByTier[tier + "|" + n] || 0),
+        0
+      );
+    const saSup = supOf(saChars, "SA");
+    const featSup = supOf(feats, "Featured");
+    const spactSup = supOf(spacts, "SPACT");
+    const supTotal = saSup + featSup + spactSup;
 
     const c = dayConfigs[cdayKey(d)];
     if (!c && !sa && !featPD && !spactPD) continue;
@@ -340,6 +383,15 @@ export function computeCrowdCosts(
           earlyTravel: agg.earlyTravel,
         },
         saChars: {},
+        perHeadBy: {
+          SA: p.per,
+          Featured: p.per, // Featured = SA rate + fees
+          SPACT: cdPerHead(c, "SPACT", s).per,
+        },
+        // an edited day carries its fees on its own character rows
+        supBy: Object.fromEntries(
+          c.chars.filter((x) => +(x.sup ?? 0) > 0).map((x) => [x.name, +(x.sup ?? 0)])
+        ),
         chars: c.chars
           .map((x) => x.name + (x.count > 1 ? " ×" + x.count : ""))
           .join(", "),
@@ -361,13 +413,16 @@ export function computeCrowdCosts(
       const saP = cdPerHead(cfg, "SA", s);
       const spP = cdPerHead(cfg, "SPACT", s);
       const heads = sa + featPD + spactPD;
-      const saCost = sa * saP.per;
-      const featCost = featPD * saP.per; // Featured = SA rate (+ sups only when edited)
-      const spactCost = spactPD * spP.per;
+      // Featured = SA rate + the supplementary fees set on the group
+      const saCost = sa * saP.per + saSup;
+      const featCost = featPD * saP.per + featSup;
+      const spactCost = spactPD * spP.per + spactSup;
       entry = {
         sa, feats, spacts, featPD, spactPD,
         cost: saCost + featCost + spactCost,
         saCost, featCost, spactCost,
+        supCost: supTotal, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
+        perHeadBy: { SA: saP.per, Featured: saP.per, SPACT: spP.per },
         saComp: {
           rates: sa * saP.base,
           hol: sa * saP.hol,
@@ -389,13 +444,19 @@ export function computeCrowdCosts(
       const lb = bandFor(d.loc, s);
       const tAmt = lb.band === "B" ? s.pact.travelB : s.pact.travelA;
       const heads = sa + featPD + spactPD;
-      const saCost = sa * s.pact.sa * hp;
-      const featCost = featPD * s.pact.sa * hp; // Featured = SA rate
-      const spactCost = spactPD * (s.spact.basic + s.spact.hol);
+      const saCost = sa * s.pact.sa * hp + saSup;
+      const featCost = featPD * s.pact.sa * hp + featSup; // Featured = SA rate + fees
+      const spactCost = spactPD * (s.spact.basic + s.spact.hol) + spactSup;
       entry = {
         sa, feats, spacts, featPD, spactPD,
         cost: saCost + featCost + spactCost + heads * tAmt,
         saCost, featCost, spactCost,
+        supCost: supTotal, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
+        perHeadBy: {
+          SA: s.pact.sa * hp + tAmt,
+          Featured: s.pact.sa * hp + tAmt,
+          SPACT: s.spact.basic + s.spact.hol + tAmt,
+        },
         saComp: {
           rates: sa * s.pact.sa,
           hol: sa * s.pact.sa * s.pact.hol,

@@ -220,7 +220,7 @@ body.hide-costs .costable{display:none!important}
 .tablecard>h3{cursor:pointer;user-select:none}
 .tablecard>h3::before{content:'▾';display:inline-block;margin-right:9px;color:var(--faint);transition:transform .12s}
 .tablecard.closed>h3::before{transform:rotate(-90deg)}
-.tablecard.closed>.tscroll,.tablecard.closed>.note{display:none}
+.tablecard.closed>.tscroll,.tablecard.closed>.note,.tablecard.closed>.briefform{display:none}
 .tablecard tbody tr.wk-exp{cursor:pointer}
 .tablecard tbody tr.wk-exp td:first-child::before{content:'▸';display:inline-block;margin-right:7px;color:var(--faint);transition:transform .12s}
 .tablecard tbody tr.wk-exp.openrow td:first-child::before{transform:rotate(90deg);color:var(--hv)}
@@ -1045,6 +1045,38 @@ body.pdf-docked .dh-top button,body.pdf-docked .dh-top a,body.pdf-docked .dh-top
 .ps-rail a:hover{background:var(--panel);color:var(--ink)}
 .ps-rail a.on{color:var(--ink);font-weight:600;border-left-color:var(--ink);background:var(--panel2)}
 .ps-content{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* ---- production page tabs (Schedules / Settings) ---- */
+.prodtabs{display:flex;gap:2px;margin:16px 0 0;border-bottom:1px solid var(--line)}
+.prodtab{font-family:var(--cond);font-size:13.5px;letter-spacing:.01em;color:var(--sub);background:none;border:none;
+  padding:9px 15px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.prodtab:hover{color:var(--ink)}
+.prodtab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
+/* the settings sheet, relocated out of its modal and shown inline in the page */
+.ps-inline-host{margin-top:18px}
+.ps-inline-host .rp-sheet{width:100%;max-height:none;border:none;border-radius:0;background:transparent;overflow:visible}
+.ps-inline-host .rp-head{padding:0 0 14px;background:transparent}
+.ps-inline-host .rp-head .crumbs{display:none}
+.ps-inline-host .rp-body{padding:16px 0;overflow:visible}
+.ps-inline-host .rp-foot{padding:14px 0 0;background:transparent;border-top:1px solid var(--line)}
+/* ---- production cover banner + tagline on the production page ---- */
+.prod-banner{height:240px;border-radius:14px;background-size:cover;background-position:center;
+  border:1px solid var(--line);margin-top:8px}
+@media(max-width:640px){.prod-banner{height:170px}}
+.prod-tagline{color:var(--sub);font-size:13px;margin:2px 0 0}
+/* ---- Branding settings section ---- */
+.ps-brand{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.ps-cover-prev{width:230px;height:130px;border-radius:10px;background-size:cover;background-position:center;
+  border:1px solid var(--line2);flex:0 0 auto}
+.ps-cover-prev.empty{display:flex;align-items:center;justify-content:center;background:var(--panel2);
+  border-style:dashed;color:var(--faint);font-size:12px;font-family:var(--mono)}
+.ps-banner-prev{width:330px;height:130px}
+.ps-brand-side{flex:1 1 220px;min-width:200px}
+.ps-brand-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.ps-add.danger{border-color:rgba(229,83,75,.4);color:#e5534b}
+.ps-hint{font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.5}
+.ps-accent{display:flex;align-items:center;gap:10px}
+.ps-accent input[type=color]{width:38px;height:30px;padding:0;border:1px solid var(--line2);border-radius:8px;background:none;cursor:pointer}
+.ps-accent-note{font-family:var(--mono);font-size:10.5px;color:var(--faint);line-height:1.45}
 .ps-sec{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .ps-sec h4{font-family:var(--cond);font-size:13px;color:var(--sub);margin:0 0 3px}
 .ps-sec .why{font-size:11.5px;color:var(--faint);margin-bottom:10px}
@@ -1398,6 +1430,14 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .code.feat.named.click{background:var(--notebg);color:var(--note)}
 .code.spact.named.click{background:rgba(183,138,255,.12);color:#9a6cd8}
 .code.named.click:hover{border-color:var(--crowd)!important;background:var(--crowd);color:#fff}
+/* a crowd chip whose "name" is still just a category label — SA, Extra, SPACT,
+   Stunt, Background artist… These stand out as work-to-do (dashed amber, italic)
+   so the AD can see which groups still need a real character name. Placed after
+   the named/tier rules and given equal-or-higher specificity so it wins. */
+.code.needsname,.code.named.needsname,.code.cr.anon.click.needsname{
+  background:var(--notebg)!important;border:1px dashed var(--note)!important;color:var(--note)!important;font-style:italic}
+.code.needsname.click:hover,.code.named.needsname.click:hover{
+  background:var(--note)!important;border-color:var(--note)!important;color:var(--panel)!important;font-style:normal}
 
 /* movable crowd groups: each chip can be dragged, and carries a ⋯ menu handle */
 .crgrp{position:relative;padding-right:19px}
@@ -1519,6 +1559,7 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 
 /* ---- DOOD (day-out-of-days) grid: sticky name column + sticky day header,
    the matrix scrolls both ways inside its card ---- */
+.doodkind{margin:0 0 12px}
 .doodscroll{overflow:auto;max-height:72vh}
 .doodtable{border-collapse:separate;border-spacing:0;font-size:11px;width:max-content;min-width:100%}
 .doodtable th,.doodtable td{border-bottom:1px solid var(--line);padding:5px 8px;white-space:nowrap}
@@ -1567,6 +1608,32 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
   font-family:var(--body);font-size:12.5px;padding:5px 8px;width:96px}
 .cbdstat{font-size:11.5px;color:var(--sub);font-weight:500}
 
+/* ---- Columns builder (reorder + show/hide) ------------------------------- */
+.cbcolwrap{position:relative;display:inline-flex}
+.cbcolpanel{position:absolute;top:calc(100% + 8px);left:0;z-index:30;width:250px;
+  background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.28);padding:12px}
+.cbcolhd{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--sub);margin-bottom:8px}
+.cbcollist{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
+.cbcolrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px}
+.cbcolrow.off{opacity:.55}
+.cbcolname{font-size:12.5px;font-weight:500;color:var(--ink)}
+.cbcolhint{font-style:normal;font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--sub);margin-left:6px}
+.cbcolbtns{display:flex;align-items:center;gap:4px}
+.cbcolmv{width:24px;height:24px;line-height:1;border:1px solid var(--line2);border-radius:6px;
+  background:var(--panel);color:var(--ink);font-size:13px;cursor:pointer;padding:0}
+.cbcolmv:hover:not([disabled]){border-color:var(--accent,#b58900);background:var(--panel2)}
+.cbcolmv[disabled]{opacity:.3;cursor:default}
+.cbcolvis{display:inline-flex;align-items:center;margin-left:3px}
+.cbcolvis input{margin:0}
+.cbcolnotes{font-size:12.5px;color:var(--sub);font-weight:500;display:flex;align-items:center;gap:7px}
+.cbcolfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
+.cbcoltip{font-size:10.5px;color:var(--sub);line-height:1.3;max-width:150px}
+.cbcolfoot .tb-btn{padding:6px 11px;font-size:12px}
+
 .cbdoc{background:#fff;color:#000;border:1px solid var(--line);border-radius:var(--r);
   padding:14px;overflow:hidden}
 .cbhead{text-align:center;padding:2px 0 10px}
@@ -1580,15 +1647,26 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
   overflow-wrap:anywhere}
 .cbtable thead th{background:#fff;font-size:9px;font-weight:700;letter-spacing:.06em;
   text-align:center;text-transform:uppercase;padding:4px 3px;position:sticky;top:0;z-index:2}
-/* column widths mirror the reference documents */
-.cbtable th:nth-child(1){width:8%}
-.cbtable th:nth-child(2){width:26%}
-.cbtable th:nth-child(3){width:6%}
-.cbtable th:nth-child(4){width:3.5%}
-.cbtable th:nth-child(5){width:21%}
-.cbtable th:nth-child(6){width:13%}
-.cbtable th:nth-child(7){width:3.5%}
-.cbtable th:nth-child(8){width:19%}
+/* Column widths come from a <colgroup> the renderer builds from the column
+   layout (see cbColgroup), so they travel with a reordered column instead of
+   sticking to a fixed slot. Positional nth-child widths would size whatever
+   now sits in that position, so they are deliberately not used here. */
+.cbfee,.cbcost{font-size:9px}
+.cbcost{text-align:right!important;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cbfee{white-space:nowrap}
+.cbfeesel{width:100%;max-width:100%;font:inherit;font-size:8.5px;color:#000;background:#fff;
+  border:1px solid #bbb;border-radius:3px;padding:1px 2px}
+.cbfeesel:hover{border-color:#b58900;background:#fffdf0}
+.cbfeesel:focus{outline:none;border-color:#b58900;box-shadow:0 0 0 2px #f2e2a6}
+.cbfeetot{display:block;margin-top:2px;text-align:right;font-variant-numeric:tabular-nums}
+.cbfeena{color:#888}
+.cbtotal .cbfee,.cbwktotal .cbfee,.cbgrand .cbfee,
+.cbtotal .cbcost,.cbwktotal .cbcost,.cbgrand .cbcost{text-align:right!important;font-weight:700}
+.cbdstat.money{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+/* printed: the picker is a decision already made, so it prints as its value */
+@media print{
+  .cbfeesel{border:0;background:transparent;-webkit-appearance:none;appearance:none;padding:0}
+}
 
 .cbscnum{text-align:center!important;font-weight:700}
 .cbnum{font-size:10px}
@@ -1687,8 +1765,99 @@ body.printing-cbdoc{background:#fff}
 
 /* An unassessed scene says so inside the cell it needs filling in — the label
    is placeholder text, so the fix is one click from the complaint. */
+/* merged count+name column: the count reads as a bold prefix before the name */
+.cbcombo .cbcombono{font-weight:700;margin-right:5px;min-width:12px;display:inline-block;text-align:right}
+.cbcombo .cbcombono:empty::before{content:'0';color:#bbb;font-weight:600}
+.cbcombo.cbnamecell{padding-right:16px!important}
 .cbnametext.cbph:empty::before{content:attr(data-ph);color:#a35d19;font-weight:600}
 .cbnametext.cbph:empty:focus::before{opacity:.35}
 @media print{
   body.printing-cbdoc .cbnametext.cbph:empty::before{color:#000;font-weight:400}
+}
+
+/* ============================================================
+   First-run guided tour — a spotlight over the real UI plus a
+   small card explaining what is lit up. The dimming is done by a
+   huge box-shadow on the hole, so the highlighted control stays
+   fully readable at its real colours instead of behind a veil.
+   ============================================================ */
+#tourRoot{position:fixed;inset:0;z-index:200;pointer-events:none}
+#tourRoot.hidden{display:none}
+.tour-scrim{position:absolute;inset:0;pointer-events:auto}
+.tour-scrim.dim{background:rgba(0,0,0,.62)}
+body.light .tour-scrim.dim{background:rgba(12,14,18,.5)}
+.tour-hole{position:fixed;display:none;border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.62), 0 0 0 2px var(--hv), 0 0 22px 2px var(--hv-line);
+  transition:top .18s ease,left .18s ease,width .18s ease,height .18s ease}
+body.light .tour-hole{box-shadow:0 0 0 9999px rgba(12,14,18,.5), 0 0 0 2px var(--hv), 0 0 22px 2px var(--hv-line)}
+@media (prefers-reduced-motion:reduce){.tour-hole{transition:none}}
+
+.tour-pop{position:fixed;pointer-events:auto;width:min(340px,calc(100vw - 24px));
+  background:var(--panel);color:var(--ink);border:1px solid var(--line2);border-radius:14px;
+  padding:16px 18px 14px;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.tour-pop.card{width:min(430px,calc(100vw - 24px));left:50%!important;top:50%!important;
+  transform:translate(-50%,-50%);padding:26px 26px 20px;text-align:center}
+.tour-count{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:7px}
+.tour-pop h4{font-family:var(--cond);font-size:17px;line-height:1.25;margin-bottom:7px}
+.tour-pop.card h4{font-size:23px;margin-bottom:10px}
+.tour-pop p{font-size:13px;line-height:1.55;color:var(--sub)}
+.tour-pop.card p{font-size:13.5px}
+.tour-acts{display:flex;align-items:center;gap:8px;margin-top:15px}
+.tour-pop.card .tour-acts{justify-content:center}
+.tour-grow{flex:1}
+.tour-pop.card .tour-grow{display:none}
+.tour-next{background:var(--hv);color:var(--hvink);border:0;border-radius:8px;
+  padding:8px 16px;font-size:12.5px;font-weight:700}
+.tour-next:hover{background:var(--hv2)}
+.tour-back{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+  padding:8px 13px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.tour-back:hover{border-color:var(--hv);color:var(--hv)}
+.tour-ghost{background:none;border:0;color:var(--faint);font-size:12px;padding:8px 2px}
+.tour-ghost:hover{color:var(--ink)}
+.tour-dots{display:flex;gap:5px;justify-content:center;margin-top:12px}
+.tour-dots i{width:5px;height:5px;border-radius:50%;background:var(--line2)}
+.tour-dots i.on{background:var(--hv);width:14px;border-radius:3px}
+
+/* phones: the card becomes a bottom sheet and the spotlight does the pointing */
+@media (max-width:720px){
+  .tour-pop.sheet{left:12px!important;right:12px!important;bottom:14px!important;top:auto!important;
+    width:auto;transform:none}
+  .tour-pop.card{width:calc(100vw - 28px)}
+}
+
+/* ============================================================
+   Empty dashboard — a brand-new account. An empty gallery with a
+   search box over it reads as a failed load, so the space is given
+   over to the one action that matters plus what happens after it.
+   ============================================================ */
+.empty-first{max-width:680px;margin:26px auto 40px;text-align:center;
+  border:1px dashed var(--line2);border-radius:18px;padding:44px 30px 34px;background:var(--panel)}
+.ef-mark{width:54px;height:54px;margin:0 auto 18px;border-radius:14px;display:grid;place-items:center;
+  background:var(--hv-dim);border:1px solid var(--hv-line);color:var(--hv)}
+.ef-mark .ic{width:24px;height:24px}
+.empty-first h2{font-family:var(--cond);font-size:27px;font-weight:700;line-height:1.2;margin-bottom:10px}
+.empty-first > p{color:var(--sub);font-size:13.5px;line-height:1.6;max-width:460px;margin:0 auto}
+.ef-acts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:24px 0 6px}
+.ef-primary{display:inline-flex;align-items:center;gap:8px;background:var(--hv);color:var(--hvink);
+  border:0;border-radius:10px;padding:12px 22px;font-size:14px;font-weight:700}
+.ef-primary:hover{background:var(--hv2)}
+.ef-primary .ic{width:16px;height:16px}
+.ef-ghost{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;
+  padding:12px 18px;font-size:13px;font-weight:600;color:var(--ink)}
+.ef-ghost:hover{border-color:var(--hv);color:var(--hv)}
+.ef-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:34px;text-align:left}
+.ef-step{font-size:12px;line-height:1.55;color:var(--sub);border-top:1px solid var(--line);padding-top:14px}
+.ef-step b{display:block;color:var(--ink);font-size:12.5px;margin:6px 0 3px}
+.ef-n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;
+  background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
+  font-family:var(--mono);font-size:10.5px;font-weight:700}
+.ef-foot{margin-top:26px;font-size:12px;color:var(--faint)}
+.ef-foot b{color:var(--sub)}
+@media (max-width:720px){
+  .empty-first{padding:32px 20px 26px;margin-top:16px}
+  .empty-first h2{font-size:22px}
+  .ef-steps{grid-template-columns:1fr;gap:0}
+  .ef-step{padding:14px 0}
+  .ef-primary,.ef-ghost{width:100%;justify-content:center}
 }

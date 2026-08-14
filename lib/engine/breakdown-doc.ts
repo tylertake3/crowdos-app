@@ -31,6 +31,175 @@ export const CB_COLUMNS = [
   "STUNTS/OTHER",
 ] as const;
 
+// Optional money columns, appended only when the breakdown is asked to show
+// costs. They are OFF by default: the document's normal audience (ADs,
+// costume, make-up, locations) must never receive rate information.
+export const CB_COST_COLUMNS = ["FEES", "COST"] as const;
+
+// ---------------------------------------------------------------------------
+// Column layout — the single source of truth for column ORDER and visibility.
+//
+// The breakdown's columns come in fixed *segments* (a count never leaves the
+// group it counts, FEES never leaves COST). An AD can reorder the segments —
+// e.g. put SCENE DESCRIPTION first — but the guardrail is that the paired
+// columns always travel together, so merged scene blocks and the running
+// totals can never be torn apart. Every projection below (screen, .xlsx, .csv)
+// is driven by the array this produces, so the printed page, the emailed sheet
+// and the Google-Sheets import can never disagree about where a column sits.
+// ---------------------------------------------------------------------------
+
+/** A reorderable block of columns. */
+export type CbSegKey = "scene" | "desc" | "day" | "crowd" | "other" | "cost";
+
+/** One physical column, identified by the role its cell values play. */
+export type CbColRole =
+  | "sceneNum"
+  | "desc"
+  | "day"
+  | "crowdNo"
+  | "crowdName"
+  | "crowdCombo"
+  | "crowdNotes"
+  | "otherNo"
+  | "otherName"
+  | "fees"
+  | "cost";
+
+export interface CbColDef {
+  role: CbColRole;
+  /** the reorderable segment this column belongs to */
+  seg: CbSegKey;
+  /** column heading, verbatim from the reference documents */
+  header: string;
+  /** a scene-block cell that spans its whole requirement block (vertical merge) */
+  block: boolean;
+  /** a head count — printed as a real number so a spreadsheet can total it */
+  count: boolean;
+  /** a money column (FEES / COST) */
+  money: boolean;
+  /** Excel column width, in characters (proportional to the on-screen widths) */
+  width: number;
+}
+
+/** The canonical, reference-document order of the segments. */
+export const CB_SEG_ORDER: CbSegKey[] = [
+  "scene",
+  "desc",
+  "day",
+  "crowd",
+  "other",
+  "cost",
+];
+
+/** Human labels for the builder UI. */
+export const CB_SEG_LABELS: Record<CbSegKey, string> = {
+  scene: "Scene",
+  desc: "Scene description",
+  day: "Day",
+  crowd: "Crowd",
+  other: "Stunts / other",
+  cost: "Fees & costs",
+};
+
+const CB_COL_META: Record<
+  CbColRole,
+  { header: string; block: boolean; count: boolean; money: boolean; width: number; seg: CbSegKey }
+> = {
+  sceneNum: { header: "SCENE", block: true, count: false, money: false, width: 14, seg: "scene" },
+  desc: { header: "SCENE DESCRIPTION", block: true, count: false, money: false, width: 46, seg: "desc" },
+  day: { header: "DAY", block: true, count: false, money: false, width: 11, seg: "day" },
+  crowdNo: { header: "NO.", block: false, count: true, money: false, width: 6, seg: "crowd" },
+  crowdName: { header: "CROWD CHARACTER", block: false, count: false, money: false, width: 32, seg: "crowd" },
+  // the merged column: count + name in one cell (count-then-name). Marked as
+  // the count-bearing column so the total rows still show the number here.
+  crowdCombo: { header: "CROWD CHARACTER", block: false, count: true, money: false, width: 38, seg: "crowd" },
+  crowdNotes: { header: "NOTES/CONTINUITY", block: false, count: false, money: false, width: 22, seg: "crowd" },
+  otherNo: { header: "NO.", block: false, count: true, money: false, width: 6, seg: "other" },
+  otherName: { header: "STUNTS/OTHER", block: false, count: false, money: false, width: 28, seg: "other" },
+  fees: { header: "FEES", block: false, count: false, money: true, width: 11, seg: "cost" },
+  cost: { header: "COST", block: false, count: false, money: true, width: 13, seg: "cost" },
+};
+
+// Which physical columns each segment contains, in their own fixed order.
+const CB_SEG_ROLES: Record<CbSegKey, CbColRole[]> = {
+  scene: ["sceneNum"],
+  desc: ["desc"],
+  day: ["day"],
+  crowd: ["crowdNo", "crowdName", "crowdNotes"],
+  other: ["otherNo", "otherName"],
+  cost: ["fees", "cost"],
+};
+
+export interface CbLayoutOpts {
+  /** desired segment order; unknown/duplicate keys are ignored, missing ones appended */
+  order?: CbSegKey[];
+  /** show the NOTES/CONTINUITY column (default true) */
+  notes?: boolean;
+  /** include the STUNTS/OTHER segment */
+  includeOther?: boolean;
+  /** include the FEES & COST segment */
+  costs?: boolean;
+  /** merge the crowd NO. and CROWD CHARACTER columns into one (count-then-name) */
+  mergeCrowd?: boolean;
+}
+
+/**
+ * Resolve a requested segment order into the flat, validated list of columns.
+ * Always returns a usable layout: unknown keys are dropped, duplicates ignored,
+ * and any segment the caller forgot is appended in canonical order — so a saved
+ * order from an older/newer build can never produce a broken document.
+ */
+export function cbColumnLayout(opts: CbLayoutOpts = {}): CbColDef[] {
+  const showNotes = opts.notes !== false;
+  const seen = new Set<CbSegKey>();
+  const order: CbSegKey[] = [];
+  for (const k of opts.order || []) {
+    if (CB_SEG_ROLES[k] && !seen.has(k)) {
+      seen.add(k);
+      order.push(k);
+    }
+  }
+  for (const k of CB_SEG_ORDER) if (!seen.has(k)) order.push(k);
+
+  const defs: CbColDef[] = [];
+  for (const seg of order) {
+    if (seg === "other" && !opts.includeOther) continue;
+    if (seg === "cost" && !opts.costs) continue;
+    // the crowd segment collapses to one combined column when merge is on
+    const roles =
+      seg === "crowd"
+        ? opts.mergeCrowd
+          ? (["crowdCombo", "crowdNotes"] as CbColRole[])
+          : (["crowdNo", "crowdName", "crowdNotes"] as CbColRole[])
+        : CB_SEG_ROLES[seg];
+    for (const role of roles) {
+      if (role === "crowdNotes" && !showNotes) continue;
+      const m = CB_COL_META[role];
+      defs.push({
+        role,
+        seg,
+        header: m.header,
+        block: m.block,
+        count: m.count,
+        money: m.money,
+        width: m.width,
+      });
+    }
+  }
+  return defs;
+}
+
+/** Column-letter for a 0-based spreadsheet column index (A, B, … Z, AA …). */
+export function cbColLetter(index: number): string {
+  let n = index;
+  let s = "";
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
+
 /** One requirement line inside a scene block. */
 export interface CbLine {
   /** null when the line is carried from another scene — shown, never re-booked */
@@ -51,6 +220,15 @@ export interface CbLine {
   key: string;
   /** index of the source row inside its scene array, for write-back */
   slot: number;
+  /** supplementary fee per head on this line (Featured = SA + sups) */
+  sup: number;
+  /**
+   * Indicative cost of this line: heads × (per-head day rate for its tier +
+   * supplementary fee). Zero unless the caller supplied a per-head resolver.
+   * NEVER summed into a day figure — a day's people are pooled across its
+   * scenes, so the day's cost comes from the cost engine, not from these.
+   */
+  cost: number;
 }
 
 export interface CbScene {
@@ -79,6 +257,10 @@ export interface CbScene {
   pending: boolean;
   heads: number;
   otherHeads: number;
+  /** supplementary fees on this scene's crowd lines (heads × fee) */
+  fees: number;
+  /** indicative cost of this scene's crowd lines — see CbLine.cost */
+  cost: number;
 }
 
 export interface CbBandRow {
@@ -94,6 +276,10 @@ export interface CbTotalRow {
   no: number;
   otherLabel: string;
   otherNo: number;
+  /** supplementary fees booked in this band */
+  fees: number;
+  /** what this band costs — days from the cost engine, weeks/total summed */
+  cost: number;
 }
 
 export type CbRow = CbBandRow | CbScene | CbTotalRow;
@@ -101,7 +287,10 @@ export type CbRow = CbBandRow | CbScene | CbTotalRow;
 export interface CbDoc {
   title: string;
   subtitle: string;
+  /** column headings in display order (derived from `layout`) */
   columns: string[];
+  /** the ordered, resolved column layout every projection is driven by */
+  layout: CbColDef[];
   rows: CbRow[];
   totals: {
     crowd: number;
@@ -112,7 +301,13 @@ export interface CbDoc {
     confirmedNone: number;
     unassessed: number;
     pctAssessed: number;
+    /** supplementary fees across the whole breakdown */
+    fees: number;
+    /** whole-breakdown cost — the sum of the day costs */
+    cost: number;
   };
+  /** money columns are present on this projection */
+  costs: boolean;
 }
 
 export interface CbOpts {
@@ -126,8 +321,31 @@ export interface CbOpts {
   hideEmpty?: boolean;
   /** include the STUNTS/OTHER columns (stunts, children, action vehicles) */
   includeOther?: boolean;
+  /** show the NOTES/CONTINUITY column (default true) */
+  notes?: boolean;
+  /** merge the crowd NO. and CROWD CHARACTER columns into one (count-then-name) */
+  mergeCrowd?: boolean;
+  /** desired column-segment order (see cbColumnLayout); invalid entries ignored */
+  order?: CbSegKey[];
   /** print week banners and week totals */
   weeks?: boolean;
+  /**
+   * Append the FEES and COST columns. Off by default — the circulated
+   * document carries no money.
+   */
+  costs?: boolean;
+  /**
+   * Per-head day rate for a tier on a given day, holiday/OT/travel included.
+   * Supplied by the caller (the cost engine owns the rate maths; this file
+   * never duplicates it). Only consulted when `costs` is on.
+   */
+  perHead?: (dayId: string, tier: ReqTier) => number;
+  /**
+   * What a whole shoot day costs, from the cost engine. Used for the day
+   * total rows — a day's people are a pooled peak, never a sum of its scene
+   * lines, so this must not be derived from the lines above it.
+   */
+  dayCost?: (dayId: string) => number;
 }
 
 const clean = (v: unknown): string => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -217,6 +435,8 @@ function toLine(r: NamedCount, tier: ReqTier, reference: boolean, slot: number):
     // suffix can't split a group away from its own pool
     key: cbKey(tier, raw.replace(/\s*\(\s*from above[^)]*\)/i, "")),
     slot,
+    sup: +(r.sup ?? 0) || 0,
+    cost: 0,
   };
 }
 
@@ -250,6 +470,8 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       // "150 SA in three scenes is 150 people" case
       key: cbKey("SA", ""),
       slot: -1,
+      sup: 0,
+      cost: 0,
     });
   }
   push(crowd, sc.saChars, "SA", false);
@@ -272,6 +494,8 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       tbc: false,
       key: cbKey("SA", ""),
       slot: -1,
+      sup: 0,
+      cost: 0,
     });
   }
   return { crowd, other };
@@ -311,12 +535,48 @@ export function poolDayHeads(scenes: { crowd: CbLine[]; other: CbLine[] }[]): {
   return { crowd: peak((s) => s.crowd), other: peak((s) => s.other) };
 }
 
-function buildScene(d: ShootDay, sc: Scene, idx: number): CbScene {
+/**
+ * A day's supplementary fees, pooled on the same identity as its heads. A
+ * group appearing in four scenes is one booking, so its fee is paid once —
+ * summing the scene lines would charge the same wig four times over.
+ */
+export function poolDayFees(scenes: { crowd: CbLine[] }[]): number {
+  const heads = new Map<string, number>();
+  const sup = new Map<string, number>();
+  for (const sc of scenes) {
+    for (const l of sc.crowd) {
+      if (l.fromAbove) continue;
+      heads.set(l.key, Math.max(heads.get(l.key) || 0, l.no || 0));
+      sup.set(l.key, Math.max(sup.get(l.key) || 0, l.sup || 0));
+    }
+  }
+  let total = 0;
+  for (const [k, n] of heads) total += n * (sup.get(k) || 0);
+  return total;
+}
+
+function buildScene(
+  d: ShootDay,
+  sc: Scene,
+  idx: number,
+  perHead?: (dayId: string, tier: ReqTier) => number
+): CbScene {
   const { crowd, other } = cbSceneLines(sc);
   const hasAny = crowd.length > 0 || other.length > 0;
+  const dayId = d.id || `M${d.num}`;
+  let fees = 0;
+  let cost = 0;
+  for (const l of crowd) {
+    // a carried line is the same people as an earlier scene — shown, never
+    // re-booked, so it can never be charged twice
+    const heads = l.fromAbove ? 0 : l.no || 0;
+    fees += heads * l.sup;
+    if (perHead) l.cost = heads * (perHead(dayId, l.tier) + l.sup);
+    cost += l.cost;
+  }
   return {
     kind: "scene",
-    dayId: d.id || `M${d.num}`,
+    dayId,
     sceneNum: sc.num,
     sceneIdx: idx,
     num: clean(sc.num) + (clean(sc.part) ? ` PT ${clean(sc.part)}` : ""),
@@ -339,6 +599,8 @@ function buildScene(d: ShootDay, sc: Scene, idx: number): CbScene {
     // across scenes (poolDayHeads) and is deliberately not a sum of these.
     heads: headsOf(crowd),
     otherHeads: headsOf(other),
+    fees,
+    cost,
   };
 }
 
@@ -349,6 +611,8 @@ function buildScene(d: ShootDay, sc: Scene, idx: number): CbScene {
 export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc {
   const includeOther = opts.includeOther !== false;
   const useWeeks = opts.weeks !== false;
+  const showCosts = !!opts.costs;
+  const perHead = showCosts ? opts.perHead : undefined;
   const rows: CbRow[] = [];
 
   const subtitle = [
@@ -362,6 +626,8 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
 
   let crowdTotal = 0;
   let otherTotal = 0;
+  let feesTotal = 0;
+  let costTotal = 0;
   let sceneCount = 0;
   let crowded = 0;
   let confirmedNone = 0;
@@ -385,6 +651,8 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
   let curWeek = "";
   let weekCrowd = 0;
   let weekOther = 0;
+  let weekFees = 0;
+  let weekCost = 0;
 
   const closeWeek = () => {
     if (!useWeeks || !curWeek) return;
@@ -395,9 +663,13 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       no: weekCrowd,
       otherLabel: includeOther ? `WEEK ${n} STUNTS/OTHER TOTAL` : "",
       otherNo: includeOther ? weekOther : 0,
+      fees: weekFees,
+      cost: weekCost,
     });
     weekCrowd = 0;
     weekOther = 0;
+    weekFees = 0;
+    weekCost = 0;
   };
 
   for (const d of days) {
@@ -433,7 +705,7 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
         }
       }
 
-      const row = buildScene(d, sc, i);
+      const row = buildScene(d, sc, i, perHead);
       const empty = !row.crowd.length && !row.other.length;
       if (opts.hideEmpty && empty) return;
 
@@ -451,6 +723,11 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     const pooled = poolDayHeads(dayScenes);
     const dayCrowd = pooled.crowd;
     const dayOther = includeOther ? pooled.other : 0;
+    const dayFees = showCosts ? poolDayFees(dayScenes) : 0;
+    // The day's money comes from the cost engine, which prices the day's
+    // pooled requirement with holiday, overtime, early calls and travel. It is
+    // deliberately NOT the sum of the scene lines above.
+    const dayMoney = showCosts && opts.dayCost ? opts.dayCost(d.id || `M${d.num}`) || 0 : 0;
 
     rows.push({
       kind: "dayTotal",
@@ -458,12 +735,18 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       no: dayCrowd,
       otherLabel: includeOther ? "STUNTS/OTHER TOTAL" : "",
       otherNo: dayOther,
+      fees: dayFees,
+      cost: dayMoney,
     });
 
     crowdTotal += dayCrowd;
     otherTotal += dayOther;
     weekCrowd += dayCrowd;
     weekOther += dayOther;
+    feesTotal += dayFees;
+    costTotal += dayMoney;
+    weekFees += dayFees;
+    weekCost += dayMoney;
   }
 
   closeWeek();
@@ -475,14 +758,25 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       no: crowdTotal,
       otherLabel: includeOther ? "STUNTS/OTHER TOTAL" : "",
       otherNo: includeOther ? otherTotal : 0,
+      fees: feesTotal,
+      cost: costTotal,
     });
   }
 
   const assessed = crowded + confirmedNone + unassessed;
+  const layout = cbColumnLayout({
+    order: opts.order,
+    notes: opts.notes,
+    includeOther,
+    costs: showCosts,
+    mergeCrowd: opts.mergeCrowd,
+  });
   return {
     title: clean(opts.production) || "CROWD BREAKDOWN",
     subtitle,
-    columns: includeOther ? [...CB_COLUMNS] : CB_COLUMNS.slice(0, 6),
+    columns: layout.map((c) => c.header),
+    layout,
+    costs: showCosts,
     rows,
     totals: {
       crowd: crowdTotal,
@@ -495,6 +789,8 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       pctAssessed: assessed
         ? Math.round(((crowded + confirmedNone) / assessed) * 100)
         : 0,
+      fees: feesTotal,
+      cost: costTotal,
     },
   };
 }
@@ -523,9 +819,21 @@ export type CbSheetRowKind =
   | "weekTotal"
   | "grandTotal";
 
+/**
+ * A live spreadsheet formula (e.g. week/overall totals). `result` is the value
+ * the app already computed, so the cell reads correctly before the spreadsheet
+ * recalculates and matches what the app prints.
+ */
+export interface CbFormulaCell {
+  formula: string;
+  result: number;
+}
+
+export type CbCell = string | number | null | CbFormulaCell;
+
 export interface CbSheetRow {
   kind: CbSheetRowKind;
-  cells: (string | number | null)[];
+  cells: CbCell[];
   /** merge the whole row into one cell (bands and the title block) */
   full?: boolean;
   /** this row's crowd line is carried from another scene — never a booking */
@@ -546,6 +854,8 @@ export interface CbVMerge {
 export interface CbStyledSheet {
   name: string;
   columns: string[];
+  /** the resolved column layout, so the writer can style each cell by its role */
+  layout: CbColDef[];
   /** Excel column widths, in characters */
   widths: number[];
   rows: CbSheetRow[];
@@ -555,29 +865,72 @@ export interface CbStyledSheet {
   headerRow: number;
 }
 
-// Proportional to the on-screen column widths, in Excel character units.
-const CB_WIDTHS_8 = [14, 46, 11, 6, 32, 22, 6, 28];
+// Find the physical index of a role in the layout, or -1 when it is not shown.
+const roleIndex = (layout: CbColDef[], role: CbColRole): number =>
+  layout.findIndex((c) => c.role === role);
+
+// The crowd count lives in NO. normally, or in the merged CROWD CHARACTER column
+// when the two are combined — either way it is where the total number prints.
+const crowdCountIndex = (layout: CbColDef[]): number => {
+  const i = roleIndex(layout, "crowdNo");
+  return i >= 0 ? i : roleIndex(layout, "crowdCombo");
+};
+
+// "38 SA" — count then name, in a single merged cell. Carried lines show no
+// count (they are not a booking); an unnamed pool shows just its number.
+export function cbComboText(c: CbLine | undefined, blank: boolean, na: boolean): string {
+  if (!c) return blank ? (na ? "N/A" : "Not yet assessed") : "";
+  if (c.fromAbove) return c.name;
+  const no = c.no != null ? String(c.no) : "";
+  return [no, c.name].filter(Boolean).join(" ");
+}
 
 export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
-  const w = doc.columns.length;
-  const widths = w === 8 ? CB_WIDTHS_8 : CB_WIDTHS_8.slice(0, 6);
+  const layout = doc.layout;
+  const w = layout.length;
+  const widths = layout.map((c) => c.width);
   const rows: CbSheetRow[] = [];
   const merges: CbVMerge[] = [];
 
-  const pad = (cells: (string | number | null)[]): (string | number | null)[] => {
-    const out = cells.slice(0, w);
-    while (out.length < w) out.push(null);
-    return out;
-  };
-  const add = (r: CbSheetRow): number => {
-    rows.push({ ...r, cells: pad(r.cells) });
+  // Cells are placed by role into the layout's order — reorder the columns and
+  // every value follows automatically, so screen, .xlsx and .csv stay in step.
+  const build = (get: (role: CbColRole, def: CbColDef, idx: number) => CbCell): CbCell[] =>
+    layout.map((def, idx) => get(def.role, def, idx));
+  const add = (r: Omit<CbSheetRow, "cells"> & { cells: CbCell[] }): number => {
+    rows.push(r);
     return rows.length; // 1-based
   };
+  const full = (kind: CbSheetRowKind, text: string): number =>
+    add({ kind, full: true, cells: [text, ...Array(Math.max(0, w - 1)).fill(null)] });
 
-  add({ kind: "title", cells: [doc.title], full: true });
-  add({ kind: "subtitle", cells: [doc.subtitle], full: true });
-  add({ kind: "blank", cells: [] });
-  const headerRow = add({ kind: "header", cells: [...doc.columns] });
+  full("title", doc.title);
+  full("subtitle", doc.subtitle);
+  add({ kind: "blank", cells: Array(w).fill(null) });
+  const headerRow = add({ kind: "header", cells: layout.map((c) => c.header) });
+
+  // Live totals: a week total is the sum of its day totals, and the breakdown
+  // total is the sum of the week totals (or of every day total when weeks are
+  // off) — exactly how the app already computes them. Emitting those as real
+  // spreadsheet formulas means editing a day figure in Excel/Google Sheets
+  // recalculates the week and overall totals automatically. Day totals stay as
+  // literal values: a day's booking is a pooled peak across its scenes (a group
+  // called once isn't multiplied per scene), never a plain sum of the rows
+  // above, so a range-sum there would report the wrong number.
+  //
+  // The formula columns are resolved from wherever each count/money column
+  // actually lands in the layout, so reordering never breaks the totals.
+  const crowdIdx = crowdCountIndex(layout);
+  const otherIdx = roleIndex(layout, "otherNo");
+  const feesIdx = roleIndex(layout, "fees");
+  const costIdx = roleIndex(layout, "cost");
+  const CROWD_COL = cbColLetter(crowdIdx);
+  const OTHER_COL = otherIdx >= 0 ? cbColLetter(otherIdx) : "";
+  const FEES_COL = feesIdx >= 0 ? cbColLetter(feesIdx) : "";
+  const COST_COL = costIdx >= 0 ? cbColLetter(costIdx) : "";
+  const sumOf = (rowNums: number[], col: string): string =>
+    rowNums.map((n) => `${col}${n}`).join("+");
+  let dayTotalRows: number[] = []; // day-total rows since the last week total
+  const weekTotalRows: number[] = []; // week-total rows, for the breakdown total
 
   for (const r of doc.rows) {
     if (r.kind === "scene") {
@@ -602,47 +955,110 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
         const c = sc.crowd[i];
         const o = sc.other[i];
         const blank = i === 0 && !sc.crowd.length;
+        const heads = c && !c.fromAbove ? c.no || 0 : 0;
         add({
           kind: "scene",
           fromAbove: !!(c && c.fromAbove),
           pending: blank && sc.pending,
-          cells: [
-            i === 0 ? sceneCell : null,
-            i === 0 ? desc : null,
-            i === 0 ? dayCell : null,
-            c ? (c.fromAbove ? null : (c.no ?? null)) : null,
-            c ? c.name : blank ? (sc.na ? "N/A" : "Not yet assessed") : null,
-            c ? c.notes || null : null,
-            o ? (o.fromAbove ? null : (o.no ?? null)) : null,
-            o ? o.name : null,
-          ],
+          cells: build((role) => {
+            switch (role) {
+              case "sceneNum": return i === 0 ? sceneCell : null;
+              case "desc": return i === 0 ? desc : null;
+              case "day": return i === 0 ? dayCell : null;
+              case "crowdNo": return c ? (c.fromAbove ? null : (c.no ?? null)) : null;
+              case "crowdName": return c ? c.name : blank ? (sc.na ? "N/A" : "Not yet assessed") : null;
+              case "crowdCombo": return cbComboText(c, blank, sc.na) || null;
+              case "crowdNotes": return c ? c.notes || null : null;
+              case "otherNo": return o ? (o.fromAbove ? null : (o.no ?? null)) : null;
+              case "otherName": return o ? o.name : null;
+              case "fees": return c && c.sup ? heads * c.sup : null;
+              case "cost": return c && c.cost ? c.cost : null;
+              default: return null;
+            }
+          }),
         });
       }
       const last = rows.length;
       if (last > first) {
         // the scene, description and day cells span their whole block, exactly
-        // as the printed grid reads
-        for (const col of [0, 1, 2]) merges.push({ col, from: first, to: last });
+        // as the printed grid reads — merge each wherever it now sits
+        layout.forEach((def, col) => {
+          if (def.block) merges.push({ col, from: first, to: last });
+        });
       }
       continue;
     }
     if (r.kind === "dayTotal" || r.kind === "weekTotal" || r.kind === "grandTotal") {
       const t = r as CbTotalRow;
-      add({
+
+      // The rows this total sums: a week sums its day totals; the breakdown
+      // total sums the week totals, or every day total when weeks are off.
+      const src =
+        r.kind === "dayTotal"
+          ? []
+          : r.kind === "weekTotal"
+          ? dayTotalRows
+          : weekTotalRows.length
+          ? weekTotalRows
+          : dayTotalRows;
+      const live = src.length > 0;
+
+      let crowdCell: CbCell = live
+        ? { formula: sumOf(src, CROWD_COL), result: Number(t.no) || 0 }
+        : t.no;
+      let otherCell: CbCell =
+        otherIdx < 0
+          ? null
+          : live
+          ? { formula: sumOf(src, OTHER_COL), result: Number(t.otherNo) || 0 }
+          : t.otherNo;
+      let feesCell: CbCell =
+        feesIdx < 0
+          ? null
+          : live
+          ? { formula: sumOf(src, FEES_COL), result: Number(t.fees) || 0 }
+          : t.fees || null;
+      let costCell: CbCell =
+        costIdx < 0
+          ? null
+          : live
+          ? { formula: sumOf(src, COST_COL), result: Number(t.cost) || 0 }
+          : t.cost || null;
+
+      // Labels sit in the column immediately before their count, matching the
+      // reference grid (the main label just left of the crowd NO., the
+      // STUNTS/OTHER TOTAL label just left of the stunts NO.). Placed by index
+      // so they follow the columns when reordered; dropped only in the
+      // degenerate case where a count column is the very first column.
+      const mainLabelIdx = crowdIdx - 1;
+      const otherLabelIdx = otherIdx - 1;
+      const rowNum = add({
         kind: r.kind,
-        cells: [null, null, t.label, t.no, null, t.otherLabel || null, w > 6 ? t.otherNo : null, null],
+        cells: build((role, def, idx) => {
+          if (idx === crowdIdx) return crowdCell; // crowdNo, or the merged column
+          if (role === "otherNo") return otherCell;
+          if (role === "fees") return feesCell;
+          if (role === "cost") return costCell;
+          if (idx === mainLabelIdx && !def.count && !def.money) return t.label;
+          if (idx === otherLabelIdx && otherIdx >= 0 && t.otherLabel && !def.count && !def.money)
+            return t.otherLabel;
+          return null;
+        }),
       });
+
+      if (r.kind === "dayTotal") {
+        dayTotalRows.push(rowNum);
+      } else if (r.kind === "weekTotal") {
+        weekTotalRows.push(rowNum);
+        dayTotalRows = []; // next week starts a fresh run of day totals
+      }
       continue;
     }
     const b = r as CbBandRow;
-    add({
-      kind: b.kind,
-      full: true,
-      cells: [b.sub ? `${b.label}     ${b.sub}` : b.label],
-    });
+    full(b.kind as CbSheetRowKind, b.sub ? `${b.label}     ${b.sub}` : b.label);
   }
 
-  return { name: "Crowd Breakdown", columns: [...doc.columns], widths, rows, merges, headerRow };
+  return { name: "Crowd Breakdown", columns: [...doc.columns], layout, widths, rows, merges, headerRow };
 }
 
 /**
@@ -651,17 +1067,27 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
  * own cells printed on the first of them, exactly as the printed grid reads.
  */
 export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
-  const w = doc.columns.length;
-  const pad = (cells: (string | number)[]): string[] => {
-    const out = cells.map((c) => (c === null || c === undefined ? "" : String(c)));
-    while (out.length < w) out.push("");
-    return out.slice(0, w);
+  const layout = doc.layout;
+  const w = layout.length;
+  const money2 = (n: number): string => (n ? n.toFixed(2) : "");
+  const str = (v: string | number | null | undefined): string =>
+    v === null || v === undefined ? "" : String(v);
+  const build = (get: (role: CbColRole, def: CbColDef, idx: number) => string | number | null): string[] =>
+    layout.map((def, idx) => str(get(def.role, def, idx)));
+  const bandRow = (label: string): string[] => {
+    const out = Array(w).fill("");
+    out[0] = label;
+    return out;
   };
+
+  const crowdIdx = crowdCountIndex(layout);
+  const otherIdx = roleIndex(layout, "otherNo");
+
   const rows: string[][] = [];
-  rows.push(pad([doc.title]));
-  rows.push(pad([doc.subtitle]));
-  rows.push(pad([]));
-  rows.push(pad([...doc.columns]));
+  rows.push(bandRow(doc.title));
+  rows.push(bandRow(doc.subtitle));
+  rows.push(Array(w).fill(""));
+  rows.push(layout.map((c) => c.header));
 
   for (const r of doc.rows) {
     if (r.kind === "scene") {
@@ -677,34 +1103,56 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
         sc.pages,
       ].filter(Boolean);
       const n = Math.max(1, sc.crowd.length, sc.other.length);
+      // scene number prints once, with the shooting location under it
+      const sceneCell = sc.loc ? `${sc.num}  ${sc.loc}` : sc.num;
       for (let i = 0; i < n; i++) {
         const c = sc.crowd[i];
         const o = sc.other[i];
         const emptyLabel = sc.na ? "N/A" : sc.pending ? "" : "";
+        const heads = c && !c.fromAbove ? c.no || 0 : 0;
         rows.push(
-          pad([
-            i === 0 ? sc.num : "",
-            i === 0 ? descLines.join(" | ") : "",
-            i === 0 ? dayLines.join(" | ") : "",
-            c ? (c.fromAbove ? "" : (c.no ?? "")) : "",
-            c ? c.name : i === 0 ? emptyLabel : "",
-            c ? c.notes : "",
-            o ? (o.fromAbove ? "" : (o.no ?? "")) : "",
-            o ? o.name + (o.notes ? ` — ${o.notes}` : "") : "",
-          ])
+          build((role) => {
+            switch (role) {
+              case "sceneNum": return i === 0 ? sceneCell : "";
+              case "desc": return i === 0 ? descLines.join(" | ") : "";
+              case "day": return i === 0 ? dayLines.join(" | ") : "";
+              case "crowdNo": return c ? (c.fromAbove ? "" : (c.no ?? "")) : "";
+              case "crowdName": return c ? c.name : i === 0 ? emptyLabel : "";
+              case "crowdCombo": return c ? cbComboText(c, false, false) : i === 0 ? emptyLabel : "";
+              case "crowdNotes": return c ? c.notes : "";
+              case "otherNo": return o ? (o.fromAbove ? "" : (o.no ?? "")) : "";
+              case "otherName": return o ? o.name + (o.notes ? ` — ${o.notes}` : "") : "";
+              case "fees": return c && c.sup ? money2(heads * c.sup) : "";
+              case "cost": return c ? money2(c.cost) : "";
+              default: return "";
+            }
+          })
         );
       }
-      // scene location prints under the number in the grid; keep it addressable
-      if (sc.loc) rows[rows.length - Math.max(1, n)][0] = `${sc.num}  ${sc.loc}`;
       continue;
     }
     if (r.kind === "dayTotal" || r.kind === "weekTotal" || r.kind === "grandTotal") {
       const t = r as CbTotalRow;
-      rows.push(pad(["", "", t.label, t.no, "", t.otherLabel, t.otherNo, ""]));
+      const mainLabelIdx = crowdIdx - 1;
+      const otherLabelIdx = otherIdx - 1;
+      rows.push(
+        build((role, def, idx) => {
+          if (idx === crowdIdx) return t.no; // crowdNo, or the merged column
+          if (role === "otherNo") return otherIdx >= 0 ? t.otherNo : "";
+          if (role === "fees") return money2(t.fees);
+          if (role === "cost") return money2(t.cost);
+          if (idx === mainLabelIdx && !def.count && !def.money) return t.label;
+          if (idx === otherLabelIdx && otherIdx >= 0 && t.otherLabel && !def.count && !def.money)
+            return t.otherLabel;
+          return "";
+        })
+      );
       continue;
     }
     const b = r as CbBandRow;
-    rows.push(pad([b.label, b.sub || ""]));
+    const line = bandRow(b.label);
+    if (b.sub && w > 1) line[1] = b.sub;
+    rows.push(line);
   }
   return { name: "Crowd Breakdown", rows };
 }

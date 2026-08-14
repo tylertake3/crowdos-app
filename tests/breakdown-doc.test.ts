@@ -359,6 +359,28 @@ describe("crowd breakdown document", () => {
       expect(total.cells[6]).toBe(6);
     });
 
+    it("makes week and overall totals live formulas that sum the day totals", () => {
+      const sh = cbToStyledSheet(projectCrowdDoc(m));
+      const rowNo = (kind: string) => sh.rows.findIndex((r) => r.kind === kind) + 1;
+      const dayNo = rowNo("dayTotal");
+      const weekNo = rowNo("weekTotal");
+
+      // a day total stays a literal value — a day's booking is a pooled peak
+      // across its scenes, not a plain sum of the rows above it
+      const dayTotal = sh.rows.find((r) => r.kind === "dayTotal")!;
+      expect(typeof dayTotal.cells[3]).toBe("number");
+
+      // the week total is a live formula summing its day totals
+      const weekTotal = sh.rows.find((r) => r.kind === "weekTotal")!;
+      expect(weekTotal.cells[3]).toEqual({ formula: `D${dayNo}`, result: 24 });
+      expect(weekTotal.cells[6]).toEqual({ formula: `G${dayNo}`, result: 6 });
+
+      // the breakdown total is a live formula summing the week totals
+      const grandTotal = sh.rows.find((r) => r.kind === "grandTotal")!;
+      expect(grandTotal.cells[3]).toEqual({ formula: `D${weekNo}`, result: 24 });
+      expect(grandTotal.cells[6]).toEqual({ formula: `G${weekNo}`, result: 6 });
+    });
+
     it("marks bands full-width and puts the headings on a frozen row", () => {
       const sh = cbToStyledSheet(projectCrowdDoc(m));
       expect(sh.rows[sh.headerRow - 1].kind).toBe("header");
@@ -390,6 +412,266 @@ describe("crowd breakdown document", () => {
       const sh = cbToStyledSheet(projectCrowdDoc(m, { includeOther: false }));
       expect(sh.columns).toHaveLength(6);
       expect(sh.rows.every((r) => r.cells.length === 6)).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Fees & costs. The circulated document carries no money at all unless it is
+  // explicitly asked for, and when it is, the figures are the cost engine's —
+  // never re-derived here.
+  // -------------------------------------------------------------------------
+  describe("fees and costs", () => {
+    const feeDay = () =>
+      day({
+        scenes: [
+          scene({ num: "1", saChars: [{ name: "Nurses", count: 10, sup: 23 }] }),
+          // the same nurses again later in the day — one booking, one fee
+          scene({ num: "2", saChars: [{ name: "Nurses", count: 10, sup: 23 }] }),
+          scene({ num: "3", spacts: [{ name: "Barman", count: 2 }] }),
+        ],
+      });
+    const withCosts = () =>
+      projectCrowdDoc(model([feeDay()]), {
+        costs: true,
+        perHead: (_id, tier) => (tier === "SPACT" ? 300 : 130),
+        dayCost: () => 2_000,
+      });
+
+    it("carries no money at all by default", () => {
+      const doc = projectCrowdDoc(model([feeDay()]));
+      expect(doc.costs).toBe(false);
+      expect(doc.columns).toHaveLength(8);
+      expect(doc.columns).not.toContain("COST");
+      const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+      expect(scenes.every((s) => s.cost === 0)).toBe(true);
+      expect(doc.totals.cost).toBe(0);
+    });
+
+    it("appends the money columns only when asked", () => {
+      const doc = withCosts();
+      expect(doc.costs).toBe(true);
+      expect(doc.columns.slice(-2)).toEqual(["FEES", "COST"]);
+      // the document's own columns keep their positions
+      expect(doc.columns.slice(0, 8)).toEqual([...CB_COLUMNS]);
+    });
+
+    it("costs a line at heads × (day rate + its fee)", () => {
+      const doc = withCosts();
+      const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+      expect(scenes[0].crowd[0].cost).toBe(10 * (130 + 23));
+      expect(scenes[2].crowd[0].cost).toBe(2 * 300);
+    });
+
+    it("pays a group's fee once a day, however many scenes it appears in", () => {
+      const total = withCosts().rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
+      expect(total.fees).toBe(10 * 23); // not 2 × that
+    });
+
+    it("takes the day total from the cost engine, not from the lines", () => {
+      const doc = withCosts();
+      const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
+      expect(total.cost).toBe(2_000);
+      expect(doc.totals.cost).toBe(2_000);
+    });
+
+    it("never charges a carried line", () => {
+      const doc = projectCrowdDoc(
+        model([
+          day({
+            scenes: [
+              scene({ num: "1", saChars: [{ name: "Guards", count: 4, sup: 23 }] }),
+              scene({
+                num: "2",
+                saChars: [{ name: "Guards", count: 4, sup: 23, flags: ["asAbove"] }],
+              }),
+            ],
+          }),
+        ]),
+        { costs: true, perHead: () => 130, dayCost: () => 1_000 }
+      );
+      const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+      expect(scenes[1].crowd[0].cost).toBe(0);
+      expect(doc.totals.fees).toBe(4 * 23);
+    });
+
+    it("writes the money columns into the sheet, with live week totals", () => {
+      const sh = cbToStyledSheet(withCosts());
+      expect(sh.columns.slice(-2)).toEqual(["FEES", "COST"]);
+      expect(sh.rows.every((r) => r.cells.length === 10)).toBe(true);
+      expect(sh.widths).toHaveLength(10);
+      const dayTotal = sh.rows.find((r) => r.kind === "dayTotal")!;
+      expect(dayTotal.cells[9]).toBe(2_000); // literal — a day is not a sum
+      const weekTotal = sh.rows.find((r) => r.kind === "weekTotal")!;
+      expect(weekTotal.cells[9]).toMatchObject({ result: 2_000 });
+      expect((weekTotal.cells[9] as { formula: string }).formula).toMatch(/^J\d+$/);
+    });
+
+    it("keeps the money columns last when stunts/other is off", () => {
+      const sh = cbToStyledSheet(
+        projectCrowdDoc(model([feeDay()]), {
+          includeOther: false,
+          costs: true,
+          perHead: () => 130,
+          dayCost: () => 900,
+        })
+      );
+      expect(sh.columns).toEqual([
+        "SCENE",
+        "SCENE DESCRIPTION",
+        "DAY",
+        "NO.",
+        "CROWD CHARACTER",
+        "NOTES/CONTINUITY",
+        "FEES",
+        "COST",
+      ]);
+      expect(sh.rows.every((r) => r.cells.length === 8)).toBe(true);
+    });
+
+    it("flattens fees and costs into the csv projection", () => {
+      const rows = cbToSheet(withCosts()).rows;
+      expect(rows[3].slice(-2)).toEqual(["FEES", "COST"]);
+      const line = rows.find((r) => r[4] === "Nurses")!;
+      expect(line[8]).toBe("230.00");
+      expect(line[9]).toBe("1530.00");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Column layout — the builder reorders the segments and the whole document
+  // (screen / .xlsx / .csv) follows, with merges and total formulas tracking
+  // wherever each column lands.
+  // -------------------------------------------------------------------------
+  describe("column layout / reordering", () => {
+    const m = () =>
+      model([
+        day({
+          scenes: [
+            scene({
+              num: "113",
+              ie: "EXT",
+              slug: "Berlin",
+              tod: "DAY",
+              scriptDay: "5",
+              saChars: [
+                { name: "US Troops", count: 22 },
+                { name: "US Officers", count: 2 },
+              ],
+              extras: [{ name: "Stunts", count: 6 }],
+            }),
+          ],
+        }),
+      ]);
+
+    it("orders the columns as requested", () => {
+      const doc = projectCrowdDoc(m(), { order: ["desc", "scene", "day", "crowd", "other"] });
+      expect(doc.columns.slice(0, 3)).toEqual(["SCENE DESCRIPTION", "SCENE", "DAY"]);
+    });
+
+    it("ignores unknown segments and completes a partial order", () => {
+      const doc = projectCrowdDoc(m(), {
+        order: ["desc", "bogus" as unknown as "scene"],
+        includeOther: false,
+      });
+      // desc first, then the remaining known segments in canonical order
+      expect(doc.columns).toEqual([
+        "SCENE DESCRIPTION",
+        "SCENE",
+        "DAY",
+        "NO.",
+        "CROWD CHARACTER",
+        "NOTES/CONTINUITY",
+      ]);
+    });
+
+    it("hides the notes column when asked", () => {
+      const doc = projectCrowdDoc(m(), { notes: false, includeOther: false });
+      expect(doc.columns).toEqual(["SCENE", "SCENE DESCRIPTION", "DAY", "NO.", "CROWD CHARACTER"]);
+    });
+
+    it("keeps the number beside its name after reordering", () => {
+      const doc = projectCrowdDoc(m(), { order: ["desc", "scene", "day", "crowd"] });
+      const noIdx = doc.layout.findIndex((c) => c.role === "crowdNo");
+      expect(doc.layout[noIdx + 1].role).toBe("crowdName");
+    });
+
+    it("moves the scene-block merges to follow the reordered columns", () => {
+      // description first → the merged block columns are now at 0,1,2 in the
+      // new order (desc, scene, day) and the crowd cells start at 3
+      const sh = cbToStyledSheet(projectCrowdDoc(m(), { order: ["desc", "scene", "day", "crowd", "other"] }));
+      const descIdx = sh.layout.findIndex((c) => c.role === "desc");
+      const sceneIdx = sh.layout.findIndex((c) => c.role === "sceneNum");
+      expect(sh.merges.map((x) => x.col).sort((a, b) => a - b)).toEqual(
+        sh.layout.map((c, i) => (c.block ? i : -1)).filter((i) => i >= 0)
+      );
+      const troops = sh.rows.find(
+        (r) => r.cells.find((v) => v === "US Troops") !== undefined
+      )!;
+      // the description cell holds the slug/desc, the scene cell holds "113"
+      expect(troops.cells[sceneIdx]).toContain("113");
+      expect(String(troops.cells[descIdx]).toLowerCase()).toContain("berlin");
+    });
+
+    it("recomputes total formulas from the reordered count columns", () => {
+      // put FEES/COST and STUNTS/OTHER before the crowd columns
+      const sh = cbToStyledSheet(
+        projectCrowdDoc(m(), {
+          order: ["scene", "desc", "day", "cost", "other", "crowd"],
+          costs: true,
+          perHead: () => 100,
+          dayCost: () => 500,
+        })
+      );
+      const crowdIdx = sh.layout.findIndex((c) => c.role === "crowdNo");
+      const crowdCol = String.fromCharCode(65 + crowdIdx);
+      const dayNo = sh.rows.findIndex((r) => r.kind === "dayTotal") + 1;
+      const weekTotal = sh.rows.find((r) => r.kind === "weekTotal")!;
+      // week total sums the day total from whatever column the crowd NO. now sits in
+      expect(weekTotal.cells[crowdIdx]).toEqual({ formula: `${crowdCol}${dayNo}`, result: 24 });
+    });
+
+    it("merges the No. and Crowd character columns into one", () => {
+      const doc = projectCrowdDoc(m(), { mergeCrowd: true, includeOther: false });
+      // one combined column instead of NO. + CROWD CHARACTER, notes still there
+      expect(doc.columns).toEqual(["SCENE", "SCENE DESCRIPTION", "DAY", "CROWD CHARACTER", "NOTES/CONTINUITY"]);
+      const combo = doc.layout.find((c) => c.role === "crowdCombo")!;
+      expect(combo.count).toBe(true);
+    });
+
+    it("prints count-then-name in the merged cell but the number in the total", () => {
+      const sh = cbToStyledSheet(projectCrowdDoc(m(), { mergeCrowd: true, includeOther: false }));
+      const comboIdx = sh.layout.findIndex((c) => c.role === "crowdCombo");
+      const troops = sh.rows.find((r) => String(r.cells[comboIdx]).includes("US Troops"))!;
+      expect(troops.cells[comboIdx]).toBe("22 US Troops");
+      const total = sh.rows.find((r) => r.kind === "dayTotal")!;
+      // the total shows the pooled number (not text) in the same column
+      expect(total.cells[comboIdx]).toBe(24);
+    });
+
+    it("keeps the week/overall total formulas working when merged", () => {
+      const sh = cbToStyledSheet(projectCrowdDoc(m(), { mergeCrowd: true, includeOther: false }));
+      const comboIdx = sh.layout.findIndex((c) => c.role === "crowdCombo");
+      const comboCol = String.fromCharCode(65 + comboIdx);
+      const dayNo = sh.rows.findIndex((r) => r.kind === "dayTotal") + 1;
+      const weekTotal = sh.rows.find((r) => r.kind === "weekTotal")!;
+      expect(weekTotal.cells[comboIdx]).toEqual({ formula: `${comboCol}${dayNo}`, result: 24 });
+    });
+
+    it("writes the merged column into the csv", () => {
+      const rows = cbToSheet(projectCrowdDoc(m(), { mergeCrowd: true, includeOther: false })).rows;
+      expect(rows[3]).toEqual(["SCENE", "SCENE DESCRIPTION", "DAY", "CROWD CHARACTER", "NOTES/CONTINUITY"]);
+      const line = rows.find((r) => r.some((c) => c === "22 US Troops"))!;
+      expect(line).toBeTruthy();
+    });
+
+    it("reorders the csv columns and keeps totals correct", () => {
+      const rows = cbToSheet(
+        projectCrowdDoc(m(), { order: ["desc", "scene", "day", "crowd", "other"] })
+      ).rows;
+      expect(rows[3].slice(0, 3)).toEqual(["SCENE DESCRIPTION", "SCENE", "DAY"]);
+      const total = rows.find((r) => r.includes("MAIN UNIT TOTAL"))!;
+      // the crowd count still reads 24 wherever the column landed
+      expect(total).toContain("24");
     });
   });
 

@@ -343,3 +343,46 @@ describe("half-named crowd: the same group named on one scene only", () => {
     expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].saChars).toEqual({ Commuters: 300 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Supplementary fees set on the Crowd Breakdown. A fee is a real cost, so it
+// has to reach the day's total — and it belongs to the GROUP, so a group in
+// four scenes pays it once, exactly like the head count it rides on.
+// ---------------------------------------------------------------------------
+describe("supplementary fees on a requirement line", () => {
+  it("adds the fee to the day's cost", () => {
+    const plain = model([day([scene({ saChars: [{ name: "Nurses", count: 10 }] })])]);
+    const feed = model([
+      day([scene({ saChars: [{ name: "Nurses", count: 10, sup: 23 }] })]),
+    ]);
+    const a = computeCrowdCosts(plain, {}, CROWD_DEFAULTS).perDay["M1"];
+    const b = computeCrowdCosts(feed, {}, CROWD_DEFAULTS).perDay["M1"];
+    expect(b.cost - a.cost).toBeCloseTo(230, 6);
+    expect(b.supCost).toBeCloseTo(230, 6);
+  });
+
+  it("charges a group's fee once a day, not once per scene", () => {
+    const m = model([
+      day([
+        scene({ num: "1", saChars: [{ name: "Nurses", count: 10, sup: 23 }] }),
+        scene({ num: "2", saChars: [{ name: "Nurses", count: 10, sup: 23 }] }),
+        scene({ num: "3", saChars: [{ name: "Nurses", count: 10, sup: 23 }] }),
+      ]),
+    ]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].supCost).toBeCloseTo(230, 6);
+  });
+
+  it("reports the fee per group so the day calculator seeds it back", () => {
+    const m = model([
+      day([scene({ featured: [{ name: "General Bradley", count: 1, sup: 61.62 }] })]),
+    ]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].supBy).toEqual({
+      "General Bradley": 61.62,
+    });
+  });
+
+  it("a day with no fees costs exactly what it always did", () => {
+    const m = model([day([scene({ sa: 40, saChars: [{ name: "Nurses", count: 10 }] })])]);
+    expect(computeCrowdCosts(m, {}, CROWD_DEFAULTS).perDay["M1"].supCost).toBe(0);
+  });
+});
