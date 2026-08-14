@@ -73,7 +73,9 @@ const SCHEMA = {
                 tod: { type: "string" }, // DAY / NIGHT / DAWN / ...
                 scriptDay: { type: "string" },
                 pages: { type: "string" },
-                desc: { type: "string" },
+                slug: { type: "string" }, // the set / scene-location line ("OUTSKIRTS OF BERLIN")
+                desc: { type: "string" }, // the action sentence under it
+
                 cast: { type: "array", items: { type: "string" } }, // cast code numbers
                 vehicles: { type: "integer" },
                 background: {
@@ -103,7 +105,7 @@ const SCHEMA = {
                 },
               },
               required: [
-                "num", "ie", "tod", "scriptDay", "pages", "desc",
+                "num", "ie", "tod", "scriptDay", "pages", "slug", "desc",
                 "cast", "vehicles", "background", "stunts",
               ],
             },
@@ -166,8 +168,12 @@ Rules that matter for costing:
 - CAST: list the cast code numbers called for the scene (e.g. "1", "4", "12") in "cast". Keep code suffixes exactly as printed — "1x", "4v", "2v" are distinct codes (doubles / off-screen variants), never collapse them to the bare number. If the schedule has a cast list mapping codes to character names, fill "castMap".
 - VEHICLES: the count of action/picture vehicles for the scene, else 0.
 - Day "type" is "Night" only if the schedule marks the day/scene as a night shoot, else "Day" (or "" if unknown).
-- Day "loc" is the day's REAL-WORLD shooting location — the physical place/address the unit travels to (e.g. "Barbican, London", "OMAX Studios", "Wenlock Road, N1"). It is usually printed on the day banner or a "LOCATION:" line. It is NEVER a scene's INT/EXT slugline — "INT APARTMENT" or "EXT HOSPITAL" is a set inside a scene heading, not where the unit parks. If the document only gives sluglines and no physical location for a day, leave "loc" as "" rather than copying a slugline.
-- Scene "num" is the scene number/slug exactly as printed (keep letters, e.g. "12A"). "ie" is INT/EXT. "tod" is the scene's time of day.
+- Day "loc" is the day's REAL-WORLD shooting location — the physical place/address the unit travels to (e.g. "Barbican, London", "OMAX Studios", "Wenlock Road, N1"). It is usually printed on the day banner or a "LOCATION:" line. It is NEVER a scene's INT/EXT slugline — "INT APARTMENT" or "EXT HOSPITAL" is a set inside a scene heading, not where the unit parks. It is ALSO never a story/sequence/section title — a narrative label such as "Hotel opening", "The Wedding", "Flashback", "Chase", "Opening sequence" or "Montage" describes part of the story, not a physical place the unit travels to, so it must NEVER go in "loc". If the document only gives sluglines, sequence titles, or no physical location for a day, leave "loc" as "". Prefer "" over any value that is not a real, mappable place — a blank is shown to the user as "TBC", which is correct, whereas a wrong location is not.
+- Scene "num" is the scene number exactly as printed (keep letters, e.g. "12A"). "ie" is INT/EXT. "tod" is the scene's time of day.
+- A scene entry has TWO separate texts and they must never be duplicated into each other:
+  - "slug" is the SET / scene-location line from the scene heading, WITHOUT the INT/EXT prefix and without the time of day — e.g. heading "EXT OUTSKIRTS OF BERLIN - DAY" gives slug "OUTSKIRTS OF BERLIN"; "INT HOTEL LOBBY" gives slug "HOTEL LOBBY". This is the fictional place in the story, not where the unit parks.
+  - "desc" is the ACTION sentence printed under or beside that heading — e.g. "C/UP ON TRUMAN \"WE MAY HAVE TO PLAY A BIGGER ROLE\"" or "Tony gives Eddie and Susie a tour of the hotel."
+  - If the scene only prints ONE text and it is clearly a set/location line, put it in "slug" and leave "desc" as "". If the only text is an action sentence with no set line at all, put it in "desc" and leave "slug" as "". NEVER put the same words in both fields.
 - Keep days in schedule order and number them from the schedule ("Day 1", "Shoot Day 3", etc.); if unnumbered, number sequentially from 1.
 - Copy each day's date EXACTLY as printed in the document (e.g. "Wednesday 23rd April 2025") — never reformat it into ISO or any other style.
 - Create a day ONLY for an actual numbered shooting day (e.g. a "DAY #1 - Wednesday..." banner with an "End Day 1" marker). Do NOT create days for non-shooting entries such as "DAYS OFF", "BANK HOLIDAY", weekends off, unit moves, or trailing notes like "ELEMENT TO BE SHOT ON..." / "END OF SHOOTING SCHEDULE". Skip those entirely.
