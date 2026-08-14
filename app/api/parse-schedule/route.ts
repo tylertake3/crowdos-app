@@ -400,9 +400,10 @@ async function readChunk(client: Anthropic, text: string, images?: { media_type:
       { type: "text", text },
     ];
     const stream = client.beta.messages.stream({
-      betas: ["fast-mode-2026-02-01"],
+      // Fast mode was disabled: this org's fast-mode allowance is 0 tokens/min,
+      // so every request 429'd ("rate limit of 0 fast mode input tokens per
+      // minute") and the AI read never ran. Standard mode works for this org.
       model: "claude-opus-4-8",
-      speed: "fast",
       max_tokens: 32000,
       // Thinking is disabled for this extraction task so the whole token budget
       // goes to the JSON answer (reasoning and output share max_tokens, and a
