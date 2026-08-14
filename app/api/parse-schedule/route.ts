@@ -2,7 +2,7 @@
 //
 // The client already extracts a PDF's text (pdf.js, column-aware) and runs the
 // deterministic regex parser first. This route is the FALLBACK / second opinion:
-// it hands the raw extracted text to Claude Haiku 4.5 and asks for the same
+// it hands the raw extracted text to Claude Opus 4.8 and asks for the same
 // structured "days & scenes" shape the regex parser produces.
 //
 // TRUST BOUNDARY: the model only *reads* — it never computes money. Its output
@@ -393,14 +393,16 @@ async function readChunk(client: Anthropic, text: string, images?: { media_type:
       })),
       { type: "text", text },
     ];
-    const stream = client.messages.stream({
-      model: "claude-opus-5",
+    const stream = client.beta.messages.stream({
+      betas: ["fast-mode-2026-02-01"],
+      model: "claude-opus-4-8",
+      speed: "fast",
       max_tokens: 32000,
-      // Opus 5 reasons by default; we disable that for this extraction task so
-      // the whole token budget goes to the JSON answer (reasoning and output
-      // share max_tokens, and a chunk that runs over is silently dropped —
-      // exactly the "missing scenes/numbers" failure we're fixing). Opus's raw
-      // reading accuracy on dense number grids is the win here.
+      // Thinking is disabled for this extraction task so the whole token budget
+      // goes to the JSON answer (reasoning and output share max_tokens, and a
+      // chunk that runs over is silently dropped — exactly the "missing
+      // scenes/numbers" failure we're fixing). Opus's raw reading accuracy on
+      // dense number grids is the win here.
       thinking: { type: "disabled" },
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } } as any,

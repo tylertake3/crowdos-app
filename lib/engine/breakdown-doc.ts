@@ -127,7 +127,7 @@ const CB_SEG_ROLES: Record<CbSegKey, CbColRole[]> = {
   day: ["day"],
   crowd: ["crowdNo", "crowdName", "crowdNotes"],
   other: ["otherNo", "otherName"],
-  cost: ["fees", "cost"],
+  cost: ["cost"],
 };
 
 export interface CbLayoutOpts {
@@ -208,6 +208,8 @@ export interface CbLine {
   notes: string;
   tier: ReqTier;
   fromAbove: boolean;
+  /** explicitly marked in the schedule editor, rather than inferred from a repeat */
+  explicitFromAbove: boolean;
   /** outside the crowd budget — renders in the STUNTS/OTHER column */
   reference: boolean;
   tbc: boolean;
@@ -429,6 +431,7 @@ function toLine(r: NamedCount, tier: ReqTier, reference: boolean, slot: number):
     notes: lineNotes(r),
     tier,
     fromAbove,
+    explicitFromAbove: fromAbove,
     reference,
     tbc: !!r.tierTbc,
     // pool on the SOURCE name, never the decorated one, so a "(FROM ABOVE)"
@@ -464,6 +467,7 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       notes: "",
       tier: "SA",
       fromAbove: false,
+      explicitFromAbove: false,
       reference: false,
       tbc: false,
       // all anonymous background on a day is one pool — that is precisely the
@@ -490,6 +494,7 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       notes: "",
       tier: "SA",
       fromAbove: true,
+      explicitFromAbove: true,
       reference: false,
       tbc: false,
       key: cbKey("SA", ""),
@@ -499,6 +504,50 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
     });
   }
   return { crowd, other };
+}
+
+/**
+ * Repeated groups later in a day are the same booked people.  Make that
+ * visible on the document instead of leaving readers to infer it from the
+ * totals.  A larger later requirement remains a normal line: it may bring in
+ * additional people and must therefore stay available to the day peak.
+ */
+function markCarriedLines(lines: CbLine[], seen: Map<string, number>): void {
+  for (const line of lines) {
+    const count = line.no || 0;
+    const prior = seen.get(line.key) || 0;
+    if (!line.fromAbove && count > 0 && prior === count) {
+      // exactly the same group as an earlier scene — carried whole, never re-booked
+      line.fromAbove = true;
+      if (!/\bfrom above\b/i.test(line.name)) line.name = `${line.name} (FROM ABOVE)`;
+      line.cost = 0;
+    } else if (!line.fromAbove && count > prior && prior > 0) {
+      // a larger later requirement: some of these people are already called in an
+      // earlier scene, the rest are genuinely new. It stays a real booking (the
+      // extra heads count), but the document spells out how many are from above
+      // instead of leaving the reader to work it out.
+      if (!/\bfrom above\b/i.test(line.name)) {
+        line.name = `${line.name} (INCLUDING ${prior} FROM ABOVE)`;
+      }
+    }
+    if (!line.fromAbove && count > prior) seen.set(line.key, count);
+  }
+}
+
+function refreshSceneFigures(
+  row: CbScene,
+  perHead?: (dayId: string, tier: ReqTier) => number
+): void {
+  row.heads = headsOf(row.crowd);
+  row.otherHeads = headsOf(row.other);
+  row.fees = 0;
+  row.cost = 0;
+  for (const line of row.crowd) {
+    const heads = line.fromAbove ? 0 : line.no || 0;
+    line.cost = perHead ? heads * (perHead(row.dayId, line.tier) + line.sup) : 0;
+    row.fees += heads * line.sup;
+    row.cost += line.cost;
+  }
 }
 
 const headsOf = (lines: CbLine[]): number =>
@@ -689,6 +738,8 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     rows.push({ kind: "unit", label: cbUnitLabel(d), dayId: d.id });
 
     const dayScenes: CbScene[] = [];
+    const seenCrowd = new Map<string, number>();
+    const seenOther = new Map<string, number>();
 
     // Location banners split the day into blocks — "EXT USS AUGUSTA BUILD".
     const blocks = new Map<number, string>();
@@ -706,6 +757,9 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       }
 
       const row = buildScene(d, sc, i, perHead);
+      markCarriedLines(row.crowd, seenCrowd);
+      markCarriedLines(row.other, seenOther);
+      refreshSceneFigures(row, perHead);
       const empty = !row.crowd.length && !row.other.length;
       if (opts.hideEmpty && empty) return;
 
@@ -876,11 +930,10 @@ const crowdCountIndex = (layout: CbColDef[]): number => {
   return i >= 0 ? i : roleIndex(layout, "crowdCombo");
 };
 
-// "38 SA" — count then name, in a single merged cell. Carried lines show no
-// count (they are not a booking); an unnamed pool shows just its number.
+// "38 SA" — count then name, in a single merged cell. Carried lines retain
+// their count for the reader, while the total formula explicitly excludes them.
 export function cbComboText(c: CbLine | undefined, blank: boolean, na: boolean): string {
   if (!c) return blank ? (na ? "N/A" : "Not yet assessed") : "";
-  if (c.fromAbove) return c.name;
   const no = c.no != null ? String(c.no) : "";
   return [no, c.name].filter(Boolean).join(" ");
 }
@@ -908,19 +961,18 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   add({ kind: "blank", cells: Array(w).fill(null) });
   const headerRow = add({ kind: "header", cells: layout.map((c) => c.header) });
 
-  // Live totals: a week total is the sum of its day totals, and the breakdown
-  // total is the sum of the week totals (or of every day total when weeks are
-  // off) — exactly how the app already computes them. Emitting those as real
-  // spreadsheet formulas means editing a day figure in Excel/Google Sheets
-  // recalculates the week and overall totals automatically. Day totals stay as
-  // literal values: a day's booking is a pooled peak across its scenes (a group
-  // called once isn't multiplied per scene), never a plain sum of the rows
-  // above, so a range-sum there would report the wrong number.
+  // Live totals: each day pools its scene lines by group and takes the peak for
+  // each group; weeks and the breakdown total then add those day figures. This
+  // is exactly how the app calculates a booking. Emitting real formulas means
+  // that changing a scene count in Excel or Google Sheets flows all the way to
+  // the bottom total without accidentally counting a repeated group twice.
   //
   // The formula columns are resolved from wherever each count/money column
   // actually lands in the layout, so reordering never breaks the totals.
   const crowdIdx = crowdCountIndex(layout);
+  const crowdNameIdx = roleIndex(layout, "crowdName");
   const otherIdx = roleIndex(layout, "otherNo");
+  const otherNameIdx = roleIndex(layout, "otherName");
   const feesIdx = roleIndex(layout, "fees");
   const costIdx = roleIndex(layout, "cost");
   const CROWD_COL = cbColLetter(crowdIdx);
@@ -929,8 +981,20 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   const COST_COL = costIdx >= 0 ? cbColLetter(costIdx) : "";
   const sumOf = (rowNums: number[], col: string): string =>
     rowNums.map((n) => `${col}${n}`).join("+");
+  // SUMPRODUCT + MAXIFS implements the day's booking rule in a portable
+  // spreadsheet formula: for every named group, take its largest scene count
+  // once, then add those peaks. A combined count/name column is intentionally
+  // left as a value because its editable entries are text ("20 Guards"), not
+  // separate numeric cells that a formula can safely calculate from.
+  const pooled = (countIdx: number, nameIdx: number, from: number, to: number): string | null => {
+    if (countIdx < 0 || nameIdx < 0 || from > to) return null;
+    const counts = `${cbColLetter(countIdx)}${from}:${cbColLetter(countIdx)}${to}`;
+    const names = `${cbColLetter(nameIdx)}${from}:${cbColLetter(nameIdx)}${to}`;
+    return `SUMPRODUCT((${names}<>\"\")*ISERROR(SEARCH(\"FROM ABOVE\",${names}))/COUNTIF(${names},${names}),MAXIFS(${counts},${names},${names}))`;
+  };
   let dayTotalRows: number[] = []; // day-total rows since the last week total
   const weekTotalRows: number[] = []; // week-total rows, for the breakdown total
+  let dayFirstDetailRow = 0;
 
   for (const r of doc.rows) {
     if (r.kind === "scene") {
@@ -965,11 +1029,11 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
               case "sceneNum": return i === 0 ? sceneCell : null;
               case "desc": return i === 0 ? desc : null;
               case "day": return i === 0 ? dayCell : null;
-              case "crowdNo": return c ? (c.fromAbove ? null : (c.no ?? null)) : null;
+              case "crowdNo": return c ? (c.no ?? null) : null;
               case "crowdName": return c ? c.name : blank ? (sc.na ? "N/A" : "Not yet assessed") : null;
               case "crowdCombo": return cbComboText(c, blank, sc.na) || null;
               case "crowdNotes": return c ? c.notes || null : null;
-              case "otherNo": return o ? (o.fromAbove ? null : (o.no ?? null)) : null;
+              case "otherNo": return o ? (o.no ?? null) : null;
               case "otherName": return o ? o.name : null;
               case "fees": return c && c.sup ? heads * c.sup : null;
               case "cost": return c && c.cost ? c.cost : null;
@@ -1003,12 +1067,21 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
           : dayTotalRows;
       const live = src.length > 0;
 
-      let crowdCell: CbCell = live
+      const dayCrowdFormula =
+        r.kind === "dayTotal" ? pooled(crowdIdx, crowdNameIdx, dayFirstDetailRow, rows.length) : null;
+      const dayOtherFormula =
+        r.kind === "dayTotal" ? pooled(otherIdx, otherNameIdx, dayFirstDetailRow, rows.length) : null;
+
+      let crowdCell: CbCell = dayCrowdFormula
+        ? { formula: dayCrowdFormula, result: Number(t.no) || 0 }
+        : live
         ? { formula: sumOf(src, CROWD_COL), result: Number(t.no) || 0 }
         : t.no;
       let otherCell: CbCell =
         otherIdx < 0
           ? null
+          : dayOtherFormula
+          ? { formula: dayOtherFormula, result: Number(t.otherNo) || 0 }
           : live
           ? { formula: sumOf(src, OTHER_COL), result: Number(t.otherNo) || 0 }
           : t.otherNo;
@@ -1055,7 +1128,8 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
       continue;
     }
     const b = r as CbBandRow;
-    full(b.kind as CbSheetRowKind, b.sub ? `${b.label}     ${b.sub}` : b.label);
+    const bandRow = full(b.kind as CbSheetRowKind, b.sub ? `${b.label}     ${b.sub}` : b.label);
+    if (b.kind === "unit") dayFirstDetailRow = bandRow + 1;
   }
 
   return { name: "Crowd Breakdown", columns: [...doc.columns], layout, widths, rows, merges, headerRow };
@@ -1108,7 +1182,11 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
       for (let i = 0; i < n; i++) {
         const c = sc.crowd[i];
         const o = sc.other[i];
-        const emptyLabel = sc.na ? "N/A" : sc.pending ? "" : "";
+        // A scene nobody has assessed must SAY so in the CSV, exactly as it does
+        // on screen and in the .xlsx. It used to come out as an empty cell,
+        // which in a spreadsheet is indistinguishable from "assessed, no crowd"
+        // — the one reading a recipient must never get wrong.
+        const emptyLabel = sc.na ? "N/A" : "Not yet assessed";
         const heads = c && !c.fromAbove ? c.no || 0 : 0;
         rows.push(
           build((role) => {
@@ -1116,11 +1194,11 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
               case "sceneNum": return i === 0 ? sceneCell : "";
               case "desc": return i === 0 ? descLines.join(" | ") : "";
               case "day": return i === 0 ? dayLines.join(" | ") : "";
-              case "crowdNo": return c ? (c.fromAbove ? "" : (c.no ?? "")) : "";
+              case "crowdNo": return c ? (c.no ?? "") : "";
               case "crowdName": return c ? c.name : i === 0 ? emptyLabel : "";
-              case "crowdCombo": return c ? cbComboText(c, false, false) : i === 0 ? emptyLabel : "";
+              case "crowdCombo": return cbComboText(c, i === 0 && !sc.crowd.length, sc.na);
               case "crowdNotes": return c ? c.notes : "";
-              case "otherNo": return o ? (o.fromAbove ? "" : (o.no ?? "")) : "";
+              case "otherNo": return o ? (o.no ?? "") : "";
               case "otherName": return o ? o.name + (o.notes ? ` — ${o.notes}` : "") : "";
               case "fees": return c && c.sup ? money2(heads * c.sup) : "";
               case "cost": return c ? money2(c.cost) : "";

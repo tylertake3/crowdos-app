@@ -141,7 +141,28 @@ describe("crowd breakdown document", () => {
       ])
     );
     const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
+    const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+    expect(scenes[1].crowd[0]).toMatchObject({
+      no: 150,
+      name: "SA's (FROM ABOVE)",
+      fromAbove: true,
+    });
     expect(total.no).toBe(150);
+    expect(doc.totals.crowd).toBe(150);
+  });
+
+  it("allows a smaller carried group to be marked from above explicitly", () => {
+    const doc = projectCrowdDoc(model([day({ scenes: [
+      scene({ num: "1", saChars: [{ name: "Guards", count: 150 }] }),
+      scene({ num: "2", saChars: [{ name: "Guards", count: 20, flags: ["asAbove"] }] }),
+    ] })]));
+    const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+    expect(scenes[1].crowd[0]).toMatchObject({
+      no: 20,
+      name: "Guards (FROM ABOVE)",
+      fromAbove: true,
+      explicitFromAbove: true,
+    });
     expect(doc.totals.crowd).toBe(150);
   });
 
@@ -161,6 +182,31 @@ describe("crowd breakdown document", () => {
     );
     const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
     expect(total.no).toBe(15);
+  });
+
+  it("notes how many of a larger later group are carried from above", () => {
+    const doc = projectCrowdDoc(model([day({ scenes: [
+      scene({ num: "1", saChars: [{ name: "Guards", count: 2 }] }),
+      scene({ num: "2", saChars: [{ name: "Guards", count: 4 }] }),
+    ] })]));
+    const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+    // the bigger scene is still a real booking (the 2 extra heads count)…
+    expect(scenes[1].crowd[0]).toMatchObject({
+      no: 4,
+      name: "Guards (INCLUDING 2 FROM ABOVE)",
+      fromAbove: false,
+    });
+    // …but the day only books the peak, not 2 + 4
+    expect(doc.totals.crowd).toBe(4);
+  });
+
+  it("does not annotate a smaller or equal later group as 'including'", () => {
+    const doc = projectCrowdDoc(model([day({ scenes: [
+      scene({ num: "1", saChars: [{ name: "Guards", count: 4 }] }),
+      scene({ num: "2", saChars: [{ name: "Guards", count: 2 }] }),
+    ] })]));
+    const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+    expect(scenes[1].crowd[0].name).toBe("Guards");
   });
 
   it("pools anonymous SA separately from named groups", () => {
@@ -355,20 +401,27 @@ describe("crowd breakdown document", () => {
       expect(troops.cells[3]).toBe(22);
       expect(typeof troops.cells[3]).toBe("number");
       const total = sh.rows.find((r) => r.kind === "dayTotal")!;
-      expect(total.cells[3]).toBe(24);
-      expect(total.cells[6]).toBe(6);
+      expect(total.cells[3]).toMatchObject({ result: 24 });
+      expect(total.cells[6]).toMatchObject({ result: 6 });
     });
 
-    it("makes week and overall totals live formulas that sum the day totals", () => {
+    it("makes day, week and overall totals live formulas", () => {
       const sh = cbToStyledSheet(projectCrowdDoc(m));
       const rowNo = (kind: string) => sh.rows.findIndex((r) => r.kind === kind) + 1;
+      const sceneRows = sh.rows
+        .map((r, i) => (r.kind === "scene" ? i + 1 : 0))
+        .filter(Boolean);
       const dayNo = rowNo("dayTotal");
       const weekNo = rowNo("weekTotal");
 
-      // a day total stays a literal value — a day's booking is a pooled peak
-      // across its scenes, not a plain sum of the rows above it
+      // A day takes the peak of each named group, rather than adding repeated
+      // lines for that group. The result remains the correct current total.
       const dayTotal = sh.rows.find((r) => r.kind === "dayTotal")!;
-      expect(typeof dayTotal.cells[3]).toBe("number");
+      expect(dayTotal.cells[3]).toEqual({
+        formula: `SUMPRODUCT((E${sceneRows[0]}:E${sceneRows.at(-1)}<>\"\")*ISERROR(SEARCH(\"FROM ABOVE\",E${sceneRows[0]}:E${sceneRows.at(-1)}))/COUNTIF(E${sceneRows[0]}:E${sceneRows.at(-1)},E${sceneRows[0]}:E${sceneRows.at(-1)}),MAXIFS(D${sceneRows[0]}:D${sceneRows.at(-1)},E${sceneRows[0]}:E${sceneRows.at(-1)},E${sceneRows[0]}:E${sceneRows.at(-1)}))`,
+        result: 24,
+      });
+      expect(dayTotal.cells[6]).toMatchObject({ result: 6 });
 
       // the week total is a live formula summing its day totals
       const weekTotal = sh.rows.find((r) => r.kind === "weekTotal")!;
@@ -404,7 +457,7 @@ describe("crowd breakdown document", () => {
       );
       expect(sh.rows.find((r) => r.pending)!.cells[4]).toBe("Not yet assessed");
       const carried = sh.rows.find((r) => r.fromAbove)!;
-      expect(carried.cells[3]).toBeNull();
+      expect(carried.cells[3]).toBe(4);
       expect(carried.cells[4]).toBe("Guards (FROM ABOVE)");
     });
 
@@ -450,7 +503,8 @@ describe("crowd breakdown document", () => {
     it("appends the money columns only when asked", () => {
       const doc = withCosts();
       expect(doc.costs).toBe(true);
-      expect(doc.columns.slice(-2)).toEqual(["FEES", "COST"]);
+      expect(doc.columns.slice(-1)).toEqual(["COST"]);
+      expect(doc.columns).not.toContain("FEES");
       // the document's own columns keep their positions
       expect(doc.columns.slice(0, 8)).toEqual([...CB_COLUMNS]);
     });
@@ -494,19 +548,20 @@ describe("crowd breakdown document", () => {
       expect(doc.totals.fees).toBe(4 * 23);
     });
 
-    it("writes the money columns into the sheet, with live week totals", () => {
+    it("writes the money column into the sheet, with live week totals", () => {
       const sh = cbToStyledSheet(withCosts());
-      expect(sh.columns.slice(-2)).toEqual(["FEES", "COST"]);
-      expect(sh.rows.every((r) => r.cells.length === 10)).toBe(true);
-      expect(sh.widths).toHaveLength(10);
+      expect(sh.columns.slice(-1)).toEqual(["COST"]);
+      expect(sh.columns).not.toContain("FEES");
+      expect(sh.rows.every((r) => r.cells.length === 9)).toBe(true);
+      expect(sh.widths).toHaveLength(9);
       const dayTotal = sh.rows.find((r) => r.kind === "dayTotal")!;
-      expect(dayTotal.cells[9]).toBe(2_000); // literal — a day is not a sum
+      expect(dayTotal.cells[8]).toBe(2_000); // literal — a day is not a sum
       const weekTotal = sh.rows.find((r) => r.kind === "weekTotal")!;
-      expect(weekTotal.cells[9]).toMatchObject({ result: 2_000 });
-      expect((weekTotal.cells[9] as { formula: string }).formula).toMatch(/^J\d+$/);
+      expect(weekTotal.cells[8]).toMatchObject({ result: 2_000 });
+      expect((weekTotal.cells[8] as { formula: string }).formula).toMatch(/^I\d+$/);
     });
 
-    it("keeps the money columns last when stunts/other is off", () => {
+    it("keeps the money column last when stunts/other is off", () => {
       const sh = cbToStyledSheet(
         projectCrowdDoc(model([feeDay()]), {
           includeOther: false,
@@ -522,18 +577,17 @@ describe("crowd breakdown document", () => {
         "NO.",
         "CROWD CHARACTER",
         "NOTES/CONTINUITY",
-        "FEES",
         "COST",
       ]);
-      expect(sh.rows.every((r) => r.cells.length === 8)).toBe(true);
+      expect(sh.rows.every((r) => r.cells.length === 7)).toBe(true);
     });
 
-    it("flattens fees and costs into the csv projection", () => {
+    it("flattens costs into the csv projection", () => {
       const rows = cbToSheet(withCosts()).rows;
-      expect(rows[3].slice(-2)).toEqual(["FEES", "COST"]);
+      expect(rows[3].slice(-1)).toEqual(["COST"]);
+      expect(rows[3]).not.toContain("FEES");
       const line = rows.find((r) => r[4] === "Nurses")!;
-      expect(line[8]).toBe("230.00");
-      expect(line[9]).toBe("1530.00");
+      expect(line[8]).toBe("1530.00");
     });
   });
 
@@ -678,5 +732,53 @@ describe("crowd breakdown document", () => {
   it("is deterministic — same model in, same document out", () => {
     const m = model([day({ scenes: [scene({ sa: 5, saChars: [{ name: "Nurses", count: 3 }] })] })]);
     expect(JSON.stringify(projectCrowdDoc(m))).toBe(JSON.stringify(projectCrowdDoc(m)));
+  });
+
+  // This document is authored on screen but lives as an export — it goes into
+  // Google Sheets. The screen carries an extra trailing row per scene with an
+  // "+ Add crowd" button on it; none of that may ever reach a sheet.
+  describe("exports carry no on-screen editing furniture", () => {
+    const m = () =>
+      model([
+        day({
+          scenes: [
+            scene({ num: "1", sa: 12, saChars: [{ name: "Shoppers", count: 12 }] }),
+            scene({ num: "2" }), // never assessed
+          ],
+        }),
+      ]);
+
+    it("emits one row per real crowd line — no trailing blank add row", () => {
+      const rows = cbToSheet(projectCrowdDoc(m())).rows;
+      // scene 1 has exactly one crowd line, so exactly one row mentions it
+      expect(rows.filter((r) => r.some((c) => String(c).includes("Shoppers")))).toHaveLength(1);
+    });
+
+    it("never emits a bare + or an Add crowd label", () => {
+      for (const opts of [{ mergeCrowd: false }, { mergeCrowd: true }]) {
+        const doc = projectCrowdDoc(m(), opts);
+        const cells = [
+          ...cbToSheet(doc).rows.flat().map((c) => String(c ?? "")),
+          ...cbToStyledSheet(doc).rows.flatMap((r) => r.cells.map((c) => String(c ?? ""))),
+        ];
+        expect(cells.some((c) => c.trim() === "+")).toBe(false);
+        expect(cells.some((c) => /add crowd/i.test(c))).toBe(false);
+      }
+    });
+
+    it("says an unassessed scene is unassessed in the csv, as the xlsx does", () => {
+      // A blank cell in a spreadsheet reads as "assessed, no crowd needed" —
+      // the opposite of the truth. Both exports must agree.
+      const doc = projectCrowdDoc(m());
+      const csv = cbToSheet(doc).rows.flat().map((c) => String(c ?? ""));
+      const xlsx = cbToStyledSheet(doc).rows.flatMap((r) => r.cells.map((c) => String(c ?? "")));
+      expect(csv).toContain("Not yet assessed");
+      expect(xlsx).toContain("Not yet assessed");
+    });
+
+    it("says so in the merged layout too", () => {
+      const doc = projectCrowdDoc(m(), { mergeCrowd: true });
+      expect(cbToSheet(doc).rows.flat().map((c) => String(c ?? ""))).toContain("Not yet assessed");
+    });
   });
 });
