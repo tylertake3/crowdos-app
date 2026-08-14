@@ -74,7 +74,49 @@ export interface NamedCount {
   // clothing, uniforms, lookalike…). Set on the Crowd Breakdown or in the day
   // calculator; this is also how a Featured SA is built — SA rate + fees.
   sup?: number;
+  // ---- recurring crowd group (cross-day continuity) ----
+  // Links this row to a production-level RecurringGroup (see ScheduleModel.
+  // recurringGroups). When set, every appearance of this group across scenes
+  // AND days is understood as the SAME people drawn from a fixed pool — so the
+  // run's unique-head count is the PEAK (the pool), never the sum, and once-per-
+  // run fees are charged a single time on the pool. `count` on this row is that
+  // day/scene's QUANTITY drawn from the pool (150, then 50, then 150), and may
+  // be smaller than the pool without meaning new people.
+  //
+  // This is the cross-DAY promotion of the within-day `cont` mechanism: `cont`
+  // pools "same people" inside one day; `groupId` pools them across the shoot.
+  groupId?: string;
   source?: ReqSource;
+}
+
+// Two kinds of supplementary fee a recurring group can carry. The distinction
+// only matters because a group is the SAME people across many days:
+//  - "onceRun"  charged a single time on the pool across the whole run
+//               (costume/wig fitting, wardrobe make-up test). A lighter day
+//               that draws fewer heads adds no new fitting — they are already
+//               in the pool.
+//  - "perDay"   recurs on every day the group works (night premium, meal
+//               penalty, action uplift). This is the existing per-head/per-day
+//               behaviour and is unchanged.
+export interface RecurringGroupFee {
+  label: string; //  "Costume fitting", "Night premium"
+  amount: number; // £ per head
+  kind: "onceRun" | "perDay";
+}
+
+// A production-level named cohort attached to scenes by reference (NamedCount.
+// groupId). The pool is the people you actually booked; each scene appearance
+// draws a quantity from it. See NamedCount.groupId for the counting contract.
+export interface RecurringGroup {
+  id: string;
+  name: string; //  "Hotel Guests", "Bob's Security"
+  tier: CrowdTier; // SA | Featured | SPACT — the three costable tiers
+  // The booked pool = the maximum number of distinct people this group can put
+  // on the floor. Unique heads for the run derive from this (and are validated
+  // against the peak per-day quantity actually used).
+  poolSize: number;
+  // Supplementary fees for the group, split by how they recur (see above).
+  fees?: RecurringGroupFee[];
 }
 
 // Scene-level status. Weather-cover scenes are deliberately double-scheduled
@@ -228,6 +270,10 @@ export interface ScheduleModel {
   // document encodes tiers ONLY in colour and no key is found, rows import as
   // tierTbc for the AD to map, rather than guessing from the colour.
   colourKey?: Record<string, ReqTier>;
+  // Production-level registry of recurring crowd groups. Rows reference these by
+  // NamedCount.groupId. Persisted per production (not derived from the schedule
+  // text), so it survives re-parses and is available to attach anywhere.
+  recurringGroups?: RecurringGroup[];
 }
 
 // CrowdTier is declared with the requirement model above.
