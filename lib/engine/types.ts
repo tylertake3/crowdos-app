@@ -70,6 +70,10 @@ export interface NamedCount {
   contRef?: string;
   // Verbatim parenthetical from the source ("all approx 18", "with Guns").
   note?: string;
+  // Supplementary fee per head attached to this group (hair/shaving, own
+  // clothing, uniforms, lookalike…). Set on the Crowd Breakdown or in the day
+  // calculator; this is also how a Featured SA is built — SA rate + fees.
+  sup?: number;
   source?: ReqSource;
 }
 
