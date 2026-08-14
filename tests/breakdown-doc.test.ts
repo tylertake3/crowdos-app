@@ -108,7 +108,10 @@ describe("crowd breakdown document", () => {
       ])
     );
     const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+    // the carried line still shows what the scene needs — it is just labelled
+    // as the same people, so no total counts it again
     expect(scenes[1].crowd[0].name).toBe("US Soldiers (FROM ABOVE)");
+    expect(scenes[1].crowd[0].no).toBe(6);
     expect(scenes[1].crowd[0].fromAbove).toBe(true);
     expect(scenes[1].crowd[1].fromAbove).toBe(false);
     // 6 new + (6 carried, not counted) + 1 new
@@ -143,6 +146,8 @@ describe("crowd breakdown document", () => {
     const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
     const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
     expect(scenes[1].crowd[0]).toMatchObject({
+      // the scene still needs 150 on the floor; they are the same 150 booked
+      // in scene 1, which is what the label says and what the total obeys
       no: 150,
       name: "SA's (FROM ABOVE)",
       fromAbove: true,
@@ -184,29 +189,32 @@ describe("crowd breakdown document", () => {
     expect(total.no).toBe(15);
   });
 
-  it("notes how many of a larger later group are carried from above", () => {
+  it("books a group where its call is biggest, and points the smaller scene at it", () => {
     const doc = projectCrowdDoc(model([day({ scenes: [
       scene({ num: "1", saChars: [{ name: "Guards", count: 2 }] }),
       scene({ num: "2", saChars: [{ name: "Guards", count: 4 }] }),
     ] })]));
     const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
-    // the bigger scene is still a real booking (the 2 extra heads count)…
-    expect(scenes[1].crowd[0]).toMatchObject({
-      no: 4,
-      name: "Guards (INCLUDING 2 FROM ABOVE)",
-      fromAbove: false,
+    // the day calls 4 guards; the 2 in scene 1 are two of those same four, so
+    // scene 1 still reads "2" and points at the scene that books them
+    expect(scenes[0].crowd[0]).toMatchObject({
+      no: 2,
+      name: "Guards (FROM SC 2)",
+      fromAbove: true,
     });
-    // …but the day only books the peak, not 2 + 4
+    expect(scenes[1].crowd[0]).toMatchObject({ no: 4, name: "Guards", fromAbove: false });
     expect(doc.totals.crowd).toBe(4);
   });
 
-  it("does not annotate a smaller or equal later group as 'including'", () => {
+  it("carries a smaller later group from the scene that booked it", () => {
     const doc = projectCrowdDoc(model([day({ scenes: [
       scene({ num: "1", saChars: [{ name: "Guards", count: 4 }] }),
       scene({ num: "2", saChars: [{ name: "Guards", count: 2 }] }),
     ] })]));
     const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
-    expect(scenes[1].crowd[0].name).toBe("Guards");
+    expect(scenes[0].crowd[0]).toMatchObject({ no: 4, fromAbove: false });
+    expect(scenes[1].crowd[0]).toMatchObject({ no: 2, name: "Guards (FROM ABOVE)" });
+    expect(doc.totals.crowd).toBe(4);
   });
 
   it("pools anonymous SA separately from named groups", () => {
@@ -414,11 +422,15 @@ describe("crowd breakdown document", () => {
       const dayNo = rowNo("dayTotal");
       const weekNo = rowNo("weekTotal");
 
-      // A day takes the peak of each named group, rather than adding repeated
-      // lines for that group. The result remains the correct current total.
+      // A day adds its NO. column and skips the lines labelled as carried, so
+      // every scene can keep the figure it actually needs. Written with
+      // SUMPRODUCT + SEARCH because it has to survive Google Sheets: the
+      // MAXIFS version this replaced was rejected outright there ("#VALUE!
+      // mismatched range sizes") and reached real productions broken.
       const dayTotal = sh.rows.find((r) => r.kind === "dayTotal")!;
+      const range = (c: string) => `${c}${sceneRows[0]}:${c}${sceneRows.at(-1)}`;
       expect(dayTotal.cells[3]).toEqual({
-        formula: `SUMPRODUCT((E${sceneRows[0]}:E${sceneRows.at(-1)}<>\"\")*ISERROR(SEARCH(\"FROM ABOVE\",E${sceneRows[0]}:E${sceneRows.at(-1)}))/COUNTIF(E${sceneRows[0]}:E${sceneRows.at(-1)},E${sceneRows[0]}:E${sceneRows.at(-1)}),MAXIFS(D${sceneRows[0]}:D${sceneRows.at(-1)},E${sceneRows[0]}:E${sceneRows.at(-1)},E${sceneRows[0]}:E${sceneRows.at(-1)}))`,
+        formula: `SUMPRODUCT(${range("D")},--ISERROR(SEARCH("(FROM ",${range("E")})))`,
         result: 24,
       });
       expect(dayTotal.cells[6]).toMatchObject({ result: 6 });
@@ -455,10 +467,73 @@ describe("crowd breakdown document", () => {
           ])
         )
       );
-      expect(sh.rows.find((r) => r.pending)!.cells[4]).toBe("Not yet assessed");
+      // an unassessed scene says nothing at all — there is nothing to say yet
+      expect(sh.rows.find((r) => r.pending)!.cells[4]).toBeNull();
+      // a carried line keeps the figure this scene needs, and is labelled so
+      // the day total below it leaves it out
       const carried = sh.rows.find((r) => r.fromAbove)!;
       expect(carried.cells[3]).toBe(4);
       expect(carried.cells[4]).toBe("Guards (FROM ABOVE)");
+    });
+
+    // The promise the whole document rests on: whatever the day looks like,
+    // adding up the numbers a recipient can SEE gives the day's figure. If this
+    // ever fails, someone's spreadsheet disagrees with their call sheet.
+    it("makes every day total equal the numbers printed above it", () => {
+      const doc = projectCrowdDoc(
+        model([
+          day({
+            scenes: [
+              // the same 48 background in three scenes — 48 people, not 144
+              scene({ num: "1", sa: 48 }),
+              scene({ num: "2", sa: 48, saChars: [{ name: "Police", count: 5 }] }),
+              scene({ num: "3", sa: 48 }),
+              // the day's biggest call for that background sits later
+              scene({ num: "4", sa: 80 }),
+              // the same police again, and a scene nobody has assessed
+              scene({ num: "5", saChars: [{ name: "police", count: 5 }] }),
+              scene({ num: "6" }),
+            ],
+          }),
+        ])
+      );
+      const sh = cbToStyledSheet(doc);
+      const dayRow = sh.rows.findIndex((r) => r.kind === "dayTotal");
+      const cell = sh.rows[dayRow].cells[3] as { formula: string; result: number };
+      const [, from, to] = cell.formula.match(/^SUMPRODUCT\(D(\d+):D(\d+),/)!;
+      // read the range exactly as the spreadsheet will: add the numbers, skip
+      // any row whose crowd character is labelled as carried
+      const printed = sh.rows
+        .slice(Number(from) - 1, Number(to))
+        .filter((r) => !/\(FROM /i.test(String(r.cells[4] ?? "")))
+        .map((r) => r.cells[3])
+        .filter((v): v is number => typeof v === "number")
+        .reduce((a, b) => a + b, 0);
+      expect(printed).toBe(cell.result);
+      expect(cell.result).toBe(85); // 80 background + 5 police
+      expect(doc.totals.crowd).toBe(85);
+    });
+
+    it("keeps a group's fee with the line that books it", () => {
+      // the fee is put on scene 1's line, but scene 2 makes the bigger call —
+      // so the fee has to travel, or the day quietly loses it
+      const doc = projectCrowdDoc(
+        model([
+          day({
+            scenes: [
+              scene({ num: "1", saChars: [{ name: "Nurses", count: 2, sup: 25 }] }),
+              scene({ num: "2", saChars: [{ name: "Nurses", count: 6 }] }),
+            ],
+          }),
+        ]),
+        { costs: true }
+      );
+      const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
+      expect(total.no).toBe(6);
+      expect(total.fees).toBe(150); // 6 × £25, paid once
+      const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+      expect(scenes[0].fees).toBe(0); // carried line — never charged
+      expect(scenes[1].fees).toBe(150);
     });
 
     it("narrows to six columns when stunts/other is switched off", () => {
@@ -766,19 +841,22 @@ describe("crowd breakdown document", () => {
       }
     });
 
-    it("says an unassessed scene is unassessed in the csv, as the xlsx does", () => {
-      // A blank cell in a spreadsheet reads as "assessed, no crowd needed" —
-      // the opposite of the truth. Both exports must agree.
+    it("leaves an unassessed scene blank rather than labelling it", () => {
+      // Nobody has looked at this scene yet, so the document has nothing to
+      // say about it. Printing a phrase like "not yet assessed" put words in
+      // the recipient's spreadsheet that no one wrote — in two different
+      // styles, depending on the row — so the cell is simply left empty.
       const doc = projectCrowdDoc(m());
       const csv = cbToSheet(doc).rows.flat().map((c) => String(c ?? ""));
       const xlsx = cbToStyledSheet(doc).rows.flatMap((r) => r.cells.map((c) => String(c ?? "")));
-      expect(csv).toContain("Not yet assessed");
-      expect(xlsx).toContain("Not yet assessed");
+      expect(csv.some((c) => /not yet assessed/i.test(c))).toBe(false);
+      expect(xlsx.some((c) => /not yet assessed/i.test(c))).toBe(false);
     });
 
-    it("says so in the merged layout too", () => {
+    it("leaves it blank in the merged layout too", () => {
       const doc = projectCrowdDoc(m(), { mergeCrowd: true });
-      expect(cbToSheet(doc).rows.flat().map((c) => String(c ?? ""))).toContain("Not yet assessed");
+      const cells = cbToSheet(doc).rows.flat().map((c) => String(c ?? ""));
+      expect(cells.some((c) => /not yet assessed/i.test(c))).toBe(false);
     });
   });
 });
