@@ -139,6 +139,24 @@ export function diffRevisions(oldM: ScheduleModel, newM: ScheduleModel): Revisio
   return { matches, dayMap, shotDays, supersededDays, cutDays, collisions, addedDays, scenes, newStart };
 }
 
+// Cast numbers are a PERMANENT label for the production, not for one document.
+// A new schedule routinely omits the cast list (issue 1 prints "9. Tony Banks",
+// issue 2 just references "9") — but "9" still means Tony Banks. Carry every
+// known code→name forward when publishing a new revision so a document that
+// drops the list doesn't blank the board's names. The new document's own names
+// win where it does give them (a genuine recast or correction takes effect);
+// anything it leaves unnamed falls back to what we already knew.
+export function carryCastMap(
+  prev: Record<string, string> | undefined | null,
+  next: Record<string, string> | undefined | null
+): Record<string, string> {
+  const out: Record<string, string> = { ...(prev || {}) };
+  for (const [code, name] of Object.entries(next || {})) {
+    if (name != null && String(name).trim()) out[code] = name; // new doc wins where named
+  }
+  return out;
+}
+
 // Plain day records for the shot days, ready to stitch into the new
 // revision's stored model (aiModel) — cloned, non-serialisable fields
 // dropped, flagged so views can tell history from the live document.
