@@ -3,7 +3,7 @@
 // as synthetic cases. See lib/engine/revise.ts for the identity model.
 
 import { describe, it, expect } from "vitest";
-import { diffRevisions, carriedDayRecords, prepModel, sceneIndexOf } from "../lib/engine";
+import { diffRevisions, carriedDayRecords, carryCastMap, prepModel, sceneIndexOf } from "../lib/engine";
 import type { Scene, ScheduleModel, ShootDay } from "../lib/engine";
 
 const scene = (num: string, part = ""): Scene => ({
@@ -130,6 +130,40 @@ describe("diffRevisions — shot history vs real cuts", () => {
     const d = diffRevisions(o, n);
     expect(d.shotDays).toHaveLength(0);
     expect(d.collisions.map((x) => x.num)).toEqual([1]);
+  });
+});
+
+describe("carryCastMap — cast numbers are a permanent production label", () => {
+  // The real FALCON case: issue 1 (28 Jul) prints the numbered cast list,
+  // issue 2 (13 Aug) drops it but its scenes still reference the same numbers.
+  const falconCast = {
+    "1": "EDDIE", "2": "SUSIE GLASS", "9": "TONY BANKS", "10": "JACK GLASS",
+    "21": "AISHA", "24": "BLANKET",
+  };
+
+  it("a new schedule with NO cast list keeps every name from the prior revision", () => {
+    const carried = carryCastMap(falconCast, {}); // issue 2 has an empty castMap
+    expect(carried).toEqual(falconCast);
+    expect(carried["9"]).toBe("TONY BANKS"); // "9" still reads as Tony Banks
+  });
+
+  it("the new document's own names win where it gives them (recast / correction)", () => {
+    const carried = carryCastMap(falconCast, { "10": "JACK (RECAST)", "50": "NEW ROLE" });
+    expect(carried["10"]).toBe("JACK (RECAST)"); // new doc overrides
+    expect(carried["50"]).toBe("NEW ROLE"); //     new code added
+    expect(carried["1"]).toBe("EDDIE"); //         untouched old name preserved
+  });
+
+  it("a blank / whitespace name in the new document never erases a known name", () => {
+    const carried = carryCastMap(falconCast, { "9": "", "1": "   " });
+    expect(carried["9"]).toBe("TONY BANKS");
+    expect(carried["1"]).toBe("EDDIE");
+  });
+
+  it("handles missing maps without throwing (first ever upload, null prev)", () => {
+    expect(carryCastMap(null, { "1": "EDDIE" })).toEqual({ "1": "EDDIE" });
+    expect(carryCastMap({ "1": "EDDIE" }, null)).toEqual({ "1": "EDDIE" });
+    expect(carryCastMap(undefined, undefined)).toEqual({});
   });
 });
 
