@@ -7,6 +7,7 @@ import type {
   CrowdDayConfig,
   CrowdTier,
   NamedCount,
+  RecurringGroup,
   ReqTier,
   ScheduleModel,
   ShootDay,
@@ -274,10 +275,36 @@ export interface PeopleAgg {
   max: number;
 }
 
+// A recurring group rolled up across the whole run. The point of the two head
+// numbers: `personDays` is the sum of every day's quantity (what you pay, day
+// rate × heads × days — unchanged from before) while `uniqueHeads` is the peak
+// (the same people drawn from a fixed pool, never re-booked). 150/50/150 →
+// personDays 350, uniqueHeads 150.
+export interface RunGroupAgg {
+  id: string;
+  name: string;
+  tier: CrowdTier;
+  poolSize: number; // as declared on the group
+  dayCounts: Map<string, number>; // day id → quantity that day (peak across its scenes)
+  personDays: number; // Σ daily quantities — the paid person-days
+  peak: number; //       max daily quantity actually used
+  uniqueHeads: number; // people booked = max(poolSize, peak); the run's true head count
+  // Fees attributed to the group, split by how they recur.
+  onceRunTotal: number; // once across the run, on uniqueHeads (fittings, wardrobe)
+  perDayFeeTotal: number; // Σ over working days of (perDay fee × that day's quantity)
+  feeTotal: number; //      onceRunTotal + perDayFeeTotal
+}
+
 export interface CrowdCosts {
   perDay: Record<string, CrowdDayEntry>;
   featPeople: Record<string, PeopleAgg>;
   spactPeople: Record<string, PeopleAgg>;
+  // Recurring crowd groups, keyed by group id. Empty when the production defines
+  // none — so existing productions are completely unaffected.
+  groups: Record<string, RunGroupAgg>;
+  // The once-per-run group fees summed across all groups. Added into `grand`
+  // (these are real committed spend charged a single time, not per day).
+  groupOnceRunTotal: number;
   weeks: CrowdWeek[];
   grand: number;
 }
@@ -298,11 +325,23 @@ export function computeCrowdCosts(
   const weeks: Record<string, CrowdWeek> = {};
   let grand = 0;
 
+  // Recurring-group registry (production-level) → per-day quantity accumulator.
+  // Only populated when the production defines groups, so nothing changes for
+  // productions that don't use them.
+  const groupDefs = new Map<string, RecurringGroup>(
+    (model.recurringGroups || []).map((g) => [g.id, g])
+  );
+  // group id → (day id → quantity that day, peak across the day's scenes)
+  const groupDayQty = new Map<string, Map<string, number>>();
+
   for (const d of model.days) {
     const saAnon = dayPeakSA(d); // anonymous "N x C" background, peak across scenes
     const feats: Record<string, number> = {};
     const spacts: Record<string, number> = {};
     const saChars: Record<string, number> = {}; // named SA groups
+    // Per-group quantity for THIS day: peak of the group's rows across scenes,
+    // so the same people in three scenes count once (mirrors the name pooling).
+    const groupToday = new Map<string, number>();
     // Supplementary fees ride with the group, not the scene: a wig or a
     // uniform is paid once for the day however many scenes the group is in,
     // so the fee pools on the same identity the head count does.
@@ -321,6 +360,12 @@ export function computeCrowdCosts(
         const t = effectiveTier(f, fallback, s);
         const into = t === "SPACT" ? spacts : t === "Featured" ? feats : saChars;
         into[f.name] = Math.max(into[f.name] || 0, f.count);
+        // Recurring-group membership: pool this row's quantity into the day's
+        // per-group peak. Head counting/costing for the day is unchanged — this
+        // only records how many of the group worked today for the run rollup.
+        if (f.groupId && groupDefs.has(f.groupId)) {
+          groupToday.set(f.groupId, Math.max(groupToday.get(f.groupId) || 0, f.count));
+        }
         const sup = +(f.sup ?? 0) || 0;
         if (sup) {
           supBy[f.name] = Math.max(supBy[f.name] || 0, sup);
@@ -479,6 +524,15 @@ export function computeCrowdCosts(
     perDay[d.id!] = entry;
     grand += entry.cost;
 
+    // Record each recurring group's quantity for this costed day (a day skipped
+    // above never gets here, so groups only accrue on days that actually work).
+    for (const [gid, qty] of groupToday) {
+      if (qty <= 0) continue;
+      let m = groupDayQty.get(gid);
+      if (!m) groupDayQty.set(gid, (m = new Map()));
+      m.set(d.id!, qty);
+    }
+
     for (const [name, count] of Object.entries(entry.feats)) {
       const p = (featPeople[name] ||= { code: name, dayCounts: new Map(), heads: 0, max: 0 });
       p.dayCounts.set(d.id!, count);
@@ -501,10 +555,56 @@ export function computeCrowdCosts(
     w.cost += entry.cost;
   }
 
+  // ---- roll recurring groups up across the whole run ----
+  // personDays = Σ daily quantities (what you pay — already in `grand` via the
+  // per-day branches). uniqueHeads = the peak / declared pool (who you booked).
+  // Group fees split by kind: onceRun charged a single time on uniqueHeads;
+  // perDay charged on each working day's quantity. Only the onceRun total is
+  // ADDED to grand here — perDay fees are surfaced for the panel but assumed to
+  // already ride on the day rows' own `sup` where set, so they are not double
+  // charged into grand.
+  const groups: Record<string, RunGroupAgg> = {};
+  let groupOnceRunTotal = 0;
+  for (const g of groupDefs.values()) {
+    const dayCounts = groupDayQty.get(g.id) || new Map<string, number>();
+    let personDays = 0;
+    let peak = 0;
+    for (const qty of dayCounts.values()) {
+      personDays += qty;
+      peak = Math.max(peak, qty);
+    }
+    const uniqueHeads = Math.max(g.poolSize || 0, peak);
+    const onceRunPer = (g.fees || [])
+      .filter((f) => f.kind === "onceRun")
+      .reduce((a, f) => a + (+f.amount || 0), 0);
+    const perDayPer = (g.fees || [])
+      .filter((f) => f.kind === "perDay")
+      .reduce((a, f) => a + (+f.amount || 0), 0);
+    const onceRunTotal = onceRunPer * uniqueHeads;
+    const perDayFeeTotal = perDayPer * personDays;
+    groupOnceRunTotal += onceRunTotal;
+    groups[g.id] = {
+      id: g.id,
+      name: g.name,
+      tier: g.tier,
+      poolSize: g.poolSize || 0,
+      dayCounts,
+      personDays,
+      peak,
+      uniqueHeads,
+      onceRunTotal,
+      perDayFeeTotal,
+      feeTotal: onceRunTotal + perDayFeeTotal,
+    };
+  }
+  grand += groupOnceRunTotal;
+
   return {
     perDay,
     featPeople,
     spactPeople,
+    groups,
+    groupOnceRunTotal,
     weeks: Object.values(weeks).sort((a, b) => a.key.localeCompare(b.key)),
     grand,
   };
