@@ -24,13 +24,17 @@ export default function RootLayout({
     <html lang="en">
       <head>
         {/* Laural design system — Inter everywhere (matches the parent
-            product's geometric sans). IBM Plex Mono kept for tabular money
-            columns where digit alignment matters. Montserrat is the crowd
-            breakdown's document face — it is named by the on-screen styles and
-            the Excel export, so it must actually be loaded here or the document
+            product's geometric sans). IBM Plex Mono is the real monospace face
+            behind --mono: money columns, scene numbers and time fields declare
+            it and must actually align digit-for-digit. Montserrat AND Poppins
+            are both offered as the crowd breakdown's document face (see
+            CB_FONTS in lib/board/app.js) and are named by the on-screen styles
+            and the Excel export, so both must be loaded here or the document
             silently falls back to Arial. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Cinzel:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Cinzel:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>

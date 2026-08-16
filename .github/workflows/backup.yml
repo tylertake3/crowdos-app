@@ -1,0 +1,156 @@
+# Scheduled database backup.
+#
+# `scripts/backup-db.sh` has existed for a while and nothing ever ran it, which
+# means the real backup schedule was "whenever Tyler remembers". This runs it
+# nightly and keeps the dump as a downloadable artefact.
+#
+# ─── WHAT YOU MUST DO FOR THIS TO ACTUALLY BACK ANYTHING UP ───────────────────
+#
+#   GitHub → your repo → Settings → Secrets and variables → Actions
+#   → New repository secret
+#
+#     Name:   SUPABASE_DB_URL
+#     Value:  the Supabase "Session pooler" connection string
+#             (Supabase dashboard → Connect → Session pooler URI), with
+#             [YOUR-PASSWORD] replaced by the real database password.
+#
+# Until that secret exists this workflow runs, reports "no secret, skipping",
+# and succeeds. That is deliberate — see the guard below.
+#
+# ─── ⚠️ READ THIS BEFORE ADDING THE SECRET ────────────────────────────────────
+#
+# SUPABASE_DB_URL is a FULL-ACCESS database credential. It bypasses row-level
+# security completely: anything holding it can read and delete every user's
+# data. Putting it in GitHub Actions is a real, considered trade-off:
+#
+#   FOR:  an automatic off-machine backup beats a manual on-machine one that
+#         does not happen. A backup that only exists on your Mac is not a backup.
+#   AGAINST: anyone who can push a workflow to this repo can print that secret.
+#         On a solo private repo that is only you. It changes the moment you add
+#         a collaborator, or if the repo is ever made public.
+#
+# THEREFORE:
+#   - Only add this secret if the repo is PRIVATE. If it is public, do not, and
+#     keep running `npm run backup` locally instead.
+#   - Do not add collaborators to this repo while the secret is set without
+#     accepting that they hold your production database.
+#   - Rotate the database password (Supabase → Settings → Database) if you ever
+#     suspect exposure, and update the secret.
+#   - This is a copy of production data sitting in GitHub's artefact storage.
+#     The retention below is set to 30 days for that reason, not 90.
+#
+# ─── WHAT IS AND IS NOT IN THE BACKUP ─────────────────────────────────────────
+#   IN:  the `public` schema (all 8 app tables + policies) and the `auth` schema
+#        (user accounts), so owner links survive a restore.
+#   NOT IN: Supabase STORAGE. Every schedule PDF and photo a user has uploaded
+#        lives in the `schedule-files` bucket and is NOT in a pg dump. Restoring
+#        this file gives you every row pointing at files that are gone. See
+#        docs/OPERATIONS.md for what to do about that.
+
+name: Backup database
+
+on:
+  schedule:
+    # 03:17 UTC daily. Deliberately not on the hour: GitHub's scheduler is
+    # heavily oversubscribed at :00 and queues cron jobs for up to 30 minutes.
+    - cron: "17 3 * * *"
+  # Lets you take a backup on demand — do this before any risky migration.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: pg_dump to artefact
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # THE GUARD. A fork of this repo has no secrets, and a scheduled workflow
+      # that fails every night on someone else's fork is noise they cannot fix.
+      # It also means the workflow can be merged and left dormant until the
+      # owner is ready to add the secret, without a permanent red X in Actions.
+      #
+      # Note the secret has to be copied into an `env:` first — you cannot use
+      # `secrets.*` in a job-level `if:`, and referencing it in a step `if:`
+      # directly is not supported either.
+      - name: Check the backup secret is configured
+        id: guard
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Backup skipped::The SUPABASE_DB_URL repository secret is not set, so there is nothing to back up. Add it under Settings > Secrets and variables > Actions. This is not a failure."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.configured == 'true'
+
+      # The Ubuntu runner ships PostgreSQL client tools, but an older major than
+      # Supabase runs. A pg_dump older than the server refuses to dump, so pull
+      # the current client from the PostgreSQL apt repository and put it first on
+      # PATH. Supabase is on PostgreSQL 15/17; client 17 handles both.
+      - name: Install a current pg_dump
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      # scripts/backup-db.sh reads SUPABASE_DB_URL out of a local .env.local,
+      # which is git-ignored and does not exist on a runner. Rather than change
+      # the script (it is the thing the owner runs by hand and it should keep
+      # working exactly as documented), write the secret into the file the script
+      # already expects. The runner is ephemeral and the file never leaves it.
+      - name: Run the backup
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf 'SUPABASE_DB_URL=%s\n' "$SUPABASE_DB_URL" >> .env.local
+          npm run backup
+          rm -f .env.local
+
+      # Sanity check. A pg_dump that fails partway can still leave a small,
+      # valid-looking gzip. A real dump of this schema is comfortably over 1KB;
+      # anything smaller means the dump failed and we should NOT quietly upload
+      # an empty file and call the backup done.
+      - name: Verify the dump is not empty
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          FILE="$(ls -1t backups/*.sql.gz | head -n 1)"
+          BYTES="$(wc -c < "$FILE")"
+          echo "Dump: $FILE ($BYTES bytes)"
+          if [ "$BYTES" -lt 1024 ]; then
+            echo "::error title=Backup looks empty::$FILE is only $BYTES bytes. Treat this as a FAILED backup."
+            exit 1
+          fi
+          # Prove it is a readable gzip and contains actual SQL, not an error page.
+          gunzip -c "$FILE" | head -c 4000 | grep -q "PostgreSQL database dump" \
+            || { echo "::error title=Backup not a pg dump::Header missing from $FILE"; exit 1; }
+
+      - name: Upload the backup
+        if: steps.guard.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crowdos-db-backup-${{ github.run_id }}
+          path: backups/*.sql.gz
+          # 30 days, not the 90-day default: this artefact contains every user's
+          # data and their auth rows. Shorter retention is less to lose.
+          retention-days: 30
+          if-no-files-found: error

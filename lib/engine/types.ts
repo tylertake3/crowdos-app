@@ -1,6 +1,8 @@
 // Shared shapes for the CrowdOS / StuntOS rate engine.
 // Ported from prototype_1.html — see RATE-ENGINE-NOTES.md for the locked rules.
 
+import type { DayMeals } from "./oncosts";
+
 export type CastType =
   | "cast"
   | "double"
@@ -86,6 +88,14 @@ export interface NamedCount {
   // This is the cross-DAY promotion of the within-day `cont` mechanism: `cont`
   // pools "same people" inside one day; `groupId` pools them across the shoot.
   groupId?: string;
+  // Custom role (`CustomRole.id`, from `CrowdSettings.roles`) this group is
+  // engaged on — "Stand-in", "Picture double". When set AND the role still
+  // exists, the group is priced through that role's own rate card instead of
+  // its tier, and reported on its own line. Absent — the default — is exactly
+  // today's behaviour. An id whose role has been deleted falls back to the
+  // row's tier and is reported in `CrowdCosts.missingRoles`; it is never
+  // silently dropped or costed at zero. See roles.ts.
+  roleId?: string;
   source?: ReqSource;
 }
 
@@ -201,12 +211,27 @@ export interface ShootDay {
   pages: string;
   unit?: string; // 'Main' | '2nd', set by prepModel
   id?: string; //  M12 / U3, set by prepModel
+  // Stable per-RECORD identity, set by prepModel: `id@index`. `id` is only
+  // unit+number and two records can legitimately share it (a day repeated
+  // across a revision stitch, a re-numbered carry-over, a thin parse). Anything
+  // that needs to tell two day RECORDS apart — revision diffing above all —
+  // must key on this, never on `id`.
+  _uid?: string;
   _date?: Date | null; // parsed calendar date, set by prepModel
+  // TRUE when the document stated no year ANYWHERE and `_date`'s year is the
+  // engine's fallback anchor rather than anything the schedule said. A year
+  // inferred from a neighbouring dated day in the same schedule is not flagged.
+  _dateYearAssumed?: boolean;
   // Already-shot history stitched in from the previous revision — mid-shoot
   // schedules only cover the remaining days, but the production keeps its
   // full timeline (and true total spend). Set by the revision-update flow.
   carried?: boolean;
   fromRev?: string; // revision label the day was shot under, e.g. "Blue"
+  // TRUE on a carried day whose ORIGINAL number the new schedule reuses for a
+  // different day. It keeps its history under a suffixed id (`M12-Blue`) rather
+  // than being dropped, which used to take a real shot day — and its spend —
+  // off the production's timeline entirely.
+  collided?: boolean;
   // ---- breakdown import ----
   // Shoot vs prep. Prep days carry fitting/test/rehearsal calls rather than
   // scenes (PDX tracks 6 prep weeks before SD1). Reserved so the model can
@@ -290,6 +315,11 @@ export interface CharacterRow {
   tier: CrowdTier;
   scene?: string; // scene refs this character belongs to
   sup?: number; //  supplementary fees per head (this is how Featured works)
+  // Custom role (`CustomRole.id`) this row is engaged on — see roles.ts and
+  // the note on NamedCount.roleId. When set and live, the row prices through
+  // the role's card and `tier` is used only as the safe fall-back if the role
+  // is ever deleted. Absent = today's behaviour, byte for byte.
+  roleId?: string;
   // Per-row call/wrap overrides — e.g. zombies called 04:00 for makeup while
   // the rest of the day's crowd is called 08:00. Unset = inherit the day's
   // call/wrap. Overriding one of the pair leaves the other inherited.
@@ -316,4 +346,15 @@ export interface CrowdDayConfig {
   // existed (undefined) still counts as a real user edit and keeps costing
   // exactly as it did.
   seeded?: boolean;
+  // Meal-break penalties incurred on this day, costed PER HEAD at the day or
+  // night rate (see oncosts.ts). Absent / all-false = none, which is the
+  // default and costs nothing. A late lunch on a 200-head day is ~£4,676.
+  meals?: DayMeals;
+  // TRUE when the USER set `ph` themselves (either way). The bank-holiday
+  // auto-flag never overrides a user's explicit choice — see
+  // CrowdSettings.autoPublicHolidays. Absent = nobody has stated it, so the
+  // engine may set it. A config saved before this field existed has `ph`
+  // exactly as the user left it and `phSet` undefined; because auto-PH is
+  // itself opt-in and default OFF, such a config still costs identically.
+  phSet?: boolean;
 }

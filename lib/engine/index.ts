@@ -1,8 +1,12 @@
 // Public surface of the rate engine.
 export * from "./types";
 export * from "./time";
+export * from "./money";
+export * from "./oncosts";
+export * from "./holidays";
 export * from "./pact";
 export * from "./spact";
+export * from "./roles";
 export * from "./location";
 export * from "./model";
 export * from "./crowd";
@@ -10,5 +14,6 @@ export * from "./stunt";
 export * from "./parser";
 export * from "./merge";
 export * from "./revise";
+export * from "./carry";
 export * from "./dance";
 export * from "./breakdown-doc";

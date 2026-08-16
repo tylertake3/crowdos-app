@@ -1,0 +1,41 @@
+// Type-check the plain-JavaScript board code (lib/board/*.js), which the main
+// tsconfig deliberately does NOT include — adding it there would fail
+// `next build`. This config is opt-in and emits nothing.
+//
+// RUN IT WITH:
+//   npm run typecheck:js        the raw list (expect ~420 errors — see below)
+//   npm run ratchet             the CI gate: fails only if that number went UP
+//                               (the authoritative current number lives in
+//                                scripts/baselines/quality-baseline.json)
+//
+// IT IS NO LONGER A DEAD FILE. As of the CI work, `.github/workflows/ci.yml`
+// runs `npm run ratchet`, which re-counts these errors on every push and
+// compares the total against the number committed in
+// `scripts/baselines/quality-baseline.json`.
+//
+//   count goes UP    → CI fails. Your change added a new loose-DOM error.
+//   count goes DOWN  → CI passes and lowers the committed baseline, so the
+//                      ceiling is permanently reduced and can never drift back.
+//
+// So: the errors here are a to-fix list, not a build gate, exactly as before —
+// but the list can now only get shorter. You are never asked to fix the ~420;
+// you are asked not to add one more. Full explanation of the mechanism is in
+// the header of scripts/ratchet.mjs.
+//
+// Why the errors exist: lib/board/*.js was ported near-verbatim from
+// prototype_1.html and does untyped DOM work throughout — `el.value` on an
+// `HTMLElement`, properties hung off `window`, object literals grown at
+// runtime. Each one is individually harmless and collectively a real risk.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "incremental": false,
+    "strict": false,
+    "types": ["node"]
+  },
+  "include": ["lib/board/*.js"],
+  "exclude": ["node_modules"]
+}

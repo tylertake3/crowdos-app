@@ -1,0 +1,92 @@
+# Dependency updates — scoped so it is useful rather than exhausting.
+#
+# The default Dependabot configuration on a Next.js app opens something like
+# 10-20 pull requests in the first week and a steady trickle after that. A solo
+# founder ignores those by week two, and once you are ignoring Dependabot you
+# are also ignoring the security advisory hiding among them. So this is tuned
+# down hard:
+#
+#   - WEEKLY, not daily. Monday morning, one batch.
+#   - GROUPED. Related packages arrive as ONE pull request, not eight. Reviewing
+#     "all dev dependencies, patch + minor" once is a two-minute job; reviewing
+#     eight separate typescript-eslint bumps is not.
+#   - MAJORS ARE IGNORED for the frameworks. A React 20 or Next 16 upgrade is a
+#     deliberate afternoon with the test suite, not a pull request you merge on
+#     a phone. Dependabot will still tell you about them via Security Advisories
+#     if one is a vulnerability, which is the case that matters.
+#   - open-pull-requests-limit is low, so a quiet week never becomes a wall.
+#
+# Every one of these PRs runs the full CI workflow, so "tests pass" is visible
+# before merging. That is what makes merging them safe to do quickly.
+#
+# NOTE: Dependabot only does anything once this file is on the repository's
+# DEFAULT branch. On a feature branch it is inert.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+
+    groups:
+      # Everything that only affects the build/test loop. Low risk: if it breaks,
+      # CI goes red and no user ever saw it.
+      dev-dependencies:
+        dependency-type: development
+        update-types: ["minor", "patch"]
+
+      # Runtime dependencies, patch + minor only. Majors are excluded here and
+      # ignored below, so this group is genuinely low-drama.
+      production-minor-patch:
+        dependency-type: production
+        update-types: ["minor", "patch"]
+
+    ignore:
+      # Framework majors: upgrade these on purpose, with time set aside.
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"
+        update-types: ["version-update:semver-major"]
+      # typescript majors change what compiles; the ratchet baseline would move.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # eslint 10 will change the config format again. Not a Tuesday job.
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript-eslint
+        update-types: ["version-update:semver-major"]
+      # The Anthropic SDK moves fast and its majors change request shapes that
+      # app/api/parse-schedule depends on. Read the changelog first.
+      - dependency-name: "@anthropic-ai/sdk"
+        update-types: ["version-update:semver-major"]
+
+  # Keeps actions/checkout, actions/setup-node etc. current. These go stale
+  # silently and eventually start printing deprecation warnings on every run.
+  # Monthly is plenty — grouped into a single PR.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]

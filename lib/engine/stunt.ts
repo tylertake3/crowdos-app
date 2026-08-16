@@ -6,6 +6,7 @@
 
 import type { ScheduleModel, ShootDay } from "./types";
 import { isStuntTok, weekKey } from "./model";
+import { money, round2, sumMoney } from "./money";
 
 export interface StuntSettings {
   perf: number; //    performer day rate
@@ -266,22 +267,26 @@ export function computeStuntCosts(
         const ex = cfg ? stuntDayExtras(cfg, daily, R) : { ot: 0, early: 0 };
         // usage applies to the day-rate / weekly-fee base only — never to the
         // night uplift, OT, early pay, holiday, insurance, or day adjustments
-        const usage = base * R.usePct;
-        const perHead = base + R.hol + usage + night + ex.ot + ex.early + (insured ? R.ins : 0);
-        const cost = perHead * count;
+        const usage = round2(base * R.usePct);
+        // one performer's settled day, then × the headcount — see money.ts
+        const perHead = sumMoney(
+          round2(base), round2(R.hol), usage, round2(night),
+          round2(ex.ot), round2(ex.early), insured ? round2(R.ins) : 0
+        );
+        const cost = money(perHead, count);
         tot.heads += count;
-        tot.rate += base * count;
-        tot.hol += R.hol * count;
-        tot.ins += (insured ? R.ins : 0) * count;
-        tot.usage += usage * count;
-        tot.total += cost;
+        tot.rate += money(base, count);
+        tot.hol += money(R.hol, count);
+        tot.ins += money(insured ? R.ins : 0, count);
+        tot.usage += money(usage, count);
+        tot.total = round2(tot.total + cost);
         const pd = (perDay[d.id!] ||= { cost: 0, people: [] });
-        pd.cost += cost;
+        pd.cost = round2(pd.cost + cost);
         pd.people.push({
           code: p.code, type: p.type, count, insured,
-          rate: base * count, hol: R.hol * count,
-          ins: (insured ? R.ins : 0) * count, usage: usage * count,
-          night: night * count, ot: ex.ot * count, early: ex.early * count, cost,
+          rate: money(base, count), hol: money(R.hol, count),
+          ins: money(insured ? R.ins : 0, count), usage: money(usage, count),
+          night: money(night, count), ot: money(ex.ot, count), early: money(ex.early, count), cost,
         });
       });
     }
@@ -334,8 +339,13 @@ export function computeStuntCosts(
     sdTotal += w.sdCoord;
   }
 
-  const grand =
-    Object.values(perPerson).reduce((a, p) => a + p.total, 0) + sdTotal + adjGrand;
+  // built from the already-settled per-person totals so the printed parts foot
+  // to the printed whole (see money.ts)
+  const grand = sumMoney(
+    ...Object.values(perPerson).map((p) => p.total),
+    sdTotal,
+    adjGrand
+  );
 
   return {
     R, perfBase, coordBase, perDay, perPerson, dayById,

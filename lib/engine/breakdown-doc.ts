@@ -18,6 +18,8 @@ import type {
   Scene,
   ShootDay,
 } from "./types";
+import { weekKey } from "./model";
+import { money, sumMoney } from "./money";
 
 // Column set, verbatim from the reference documents. Locked.
 export const CB_COLUMNS = [
@@ -242,8 +244,30 @@ export interface CbLine {
   /** supplementary fee per head on this line (Featured = SA + sups) */
   sup: number;
   /**
-   * Indicative cost of this line: heads × (per-head day rate for its tier +
-   * supplementary fee). Zero unless the caller supplied a per-head resolver.
+   * The custom role this group is paid on, carried straight off the source row
+   * (`NamedCount.roleId`). Absent on every line of a production with no roles,
+   * which is why such a document is byte-identical to one built before roles
+   * existed.
+   *
+   * It is on the LINE, and the line is priced through it, because this
+   * document is what a producer signs off: matching a printed line back to its
+   * group by NAME afterwards is a money path resting on a string, and two
+   * same-named groups on different scenes break it silently.
+   */
+  roleId?: string;
+  /** What that role is called, resolved by the caller (`CbOpts.roleLabel`). */
+  roleLabel?: string;
+  /**
+   * The role this line names no longer exists. The line falls back to its TIER
+   * rate — never dropped, never costed at nothing — and its id is listed in
+   * `CbDoc.missingRoles` so the UI says so rather than printing a wrong number
+   * quietly. Same rule the cost engine applies (`CrowdCosts.missingRoles`).
+   */
+  roleMissing?: boolean;
+  /**
+   * Indicative cost of this line: heads × (per-head day rate for its role, or
+   * for its tier + supplementary fee). Zero unless the caller supplied a
+   * per-head resolver.
    * NEVER summed into a day figure — a day's people are pooled across its
    * scenes, so the day's cost comes from the cost engine, not from these.
    */
@@ -327,6 +351,13 @@ export interface CbDoc {
   };
   /** money columns are present on this projection */
   costs: boolean;
+  /**
+   * Role ids named by lines in this document whose role no longer exists,
+   * de-duplicated and in the order they were met. Those lines are priced on
+   * their own tier, which is a safe number but not the one the user asked for
+   * — so the UI reports it instead of printing it quietly.
+   */
+  missingRoles: string[];
 }
 
 export interface CbOpts {
@@ -354,11 +385,26 @@ export interface CbOpts {
    */
   costs?: boolean;
   /**
-   * Per-head day rate for a tier on a given day, holiday/OT/travel included.
-   * Supplied by the caller (the cost engine owns the rate maths; this file
-   * never duplicates it). Only consulted when `costs` is on.
+   * Per-head day rate on a given day, holiday/OT/travel included. Supplied by
+   * the caller (the cost engine owns the rate maths; this file never
+   * duplicates it). Only consulted when `costs` is on.
+   *
+   * `roleId` is passed whenever the line names a custom role that still
+   * exists, and the caller must answer with THAT ROLE's per-head figure — a
+   * stand-in printed at the SA rate is a wrong number on a document that goes
+   * out of the building. It is passed as undefined for a plain tier line and
+   * for a line whose role has been deleted (which falls back to its tier and
+   * is reported on `CbDoc.missingRoles`).
    */
-  perHead?: (dayId: string, tier: ReqTier) => number;
+  perHead?: (dayId: string, tier: ReqTier, roleId?: string) => number;
+  /**
+   * What a custom role is called. Returning undefined means the role no longer
+   * exists: the line falls back to its tier rate and its id is collected into
+   * `CbDoc.missingRoles`. A caller that supplies no resolver at all is saying
+   * it has no roles, so every role line falls back — which is exactly the
+   * behaviour before roles existed.
+   */
+  roleLabel?: (roleId: string) => string | undefined;
   /**
    * What a whole shoot day costs, from the cost engine. Used for the day
    * total rows — a day's people are a pooled peak, never a sum of its scene
@@ -445,6 +491,12 @@ export function cbKey(tier: ReqTier, name: string): string {
   return `${tier}|${clean(name).toLowerCase()}`;
 }
 
+/** The same identity re-bucketed onto a live custom role — `role:<id>|name`,
+ *  the bucket the cost engine pools that group in (crowd.ts). */
+export function keyOnRole(key: string, roleId: string): string {
+  return `role:${roleId}|${key.slice(key.indexOf("|") + 1)}`;
+}
+
 function toLine(
   r: NamedCount,
   tier: ReqTier,
@@ -473,6 +525,8 @@ function toLine(
     key: cbKey(tier, raw.replace(/\s*\(\s*(?:\d+\s+)?from\s+(?:above|below|sc\b)[^)]*\)/i, "")),
     slot,
     sup: +(r.sup ?? 0) || 0,
+    // carried, never inferred: the row itself says which role it is paid on
+    ...(clean(r.roleId) ? { roleId: clean(r.roleId) } : {}),
     cost: 0,
   };
 }
@@ -618,20 +672,74 @@ function markDayBookings(scenes: { num: string; lines: CbLine[] }[]): void {
   });
 }
 
-function refreshSceneFigures(
-  row: CbScene,
-  perHead?: (dayId: string, tier: ReqTier) => number
-): void {
+/**
+ * What the projection needs to price a line and to name its role. One object
+ * so the resolution happens in exactly one place — a role line is priced
+ * through its role HERE, at the source, rather than being re-priced afterwards
+ * by matching printed names back to schedule groups.
+ */
+interface CbPricer {
+  perHead?: (dayId: string, tier: ReqTier, roleId?: string) => number;
+  roleLabel?: (roleId: string) => string | undefined;
+  /** role ids met on a line whose role no longer exists, in first-seen order */
+  missing: Set<string>;
+}
+
+/**
+ * Resolve a line's role once. A live role labels the line and becomes what it
+ * is priced through; a deleted one is flagged, collected, and the line reverts
+ * to its tier.
+ */
+function resolveLineRole(line: CbLine, px: CbPricer): void {
+  if (!line.roleId) return;
+  const label = px.roleLabel ? clean(px.roleLabel(line.roleId)) : "";
+  if (label) {
+    line.roleLabel = label;
+    line.roleMissing = false;
+    // A live role is its own POOL, exactly as it is in the cost engine, which
+    // buckets a row by role-or-tier and then by name. "Guards" as stand-ins and
+    // "Guards" as SAs on one day are two groups of people paid two ways: pooling
+    // them on the name alone would label one "(FROM ABOVE)" and print it at
+    // nothing, and the document would stop agreeing with the day's cost.
+    line.key = keyOnRole(line.key, line.roleId);
+    return;
+  }
+  line.roleLabel = undefined;
+  line.roleMissing = true;
+  px.missing.add(line.roleId);
+}
+
+/** Heads this line actually books — a carried line is the same people as an
+ *  earlier scene, so it can never be charged twice. */
+const bookedHeads = (line: CbLine): number => (line.fromAbove ? 0 : line.no || 0);
+
+/**
+ * Indicative cost of one line. Settled the way a payroll chit settles: the
+ * per-head figure to the penny first, then paid that many times (money.ts) —
+ * never a raw float multiplication.
+ */
+function lineCost(dayId: string, line: CbLine, px: CbPricer): number {
+  if (!px.perHead) return 0;
+  const rate = px.perHead(
+    dayId,
+    line.tier,
+    line.roleId && !line.roleMissing ? line.roleId : undefined
+  );
+  return money(sumMoney(rate, line.sup), bookedHeads(line));
+}
+
+function refreshSceneFigures(row: CbScene, px: CbPricer): void {
   row.heads = headsOf(row.crowd);
   row.otherHeads = headsOf(row.other);
-  row.fees = 0;
-  row.cost = 0;
+  let fees = 0;
+  let cost = 0;
   for (const line of row.crowd) {
-    const heads = line.fromAbove ? 0 : line.no || 0;
-    line.cost = perHead ? heads * (perHead(row.dayId, line.tier) + line.sup) : 0;
-    row.fees += heads * line.sup;
-    row.cost += line.cost;
+    line.cost = lineCost(row.dayId, line, px);
+    fees = sumMoney(fees, money(line.sup, bookedHeads(line)));
+    cost = sumMoney(cost, line.cost);
   }
+  row.fees = fees;
+  row.cost = cost;
 }
 
 const headsOf = (lines: CbLine[]): number =>
@@ -686,29 +794,26 @@ export function poolDayFees(scenes: { crowd: CbLine[] }[]): number {
     }
   }
   let total = 0;
-  for (const [k, n] of heads) total += n * (sup.get(k) || 0);
+  for (const [k, n] of heads) total = sumMoney(total, money(sup.get(k) || 0, n));
   return total;
 }
 
-function buildScene(
-  d: ShootDay,
-  sc: Scene,
-  idx: number,
-  perHead?: (dayId: string, tier: ReqTier) => number
-): CbScene {
+function buildScene(d: ShootDay, sc: Scene, idx: number, px: CbPricer): CbScene {
   const { crowd, other } = cbSceneLines(sc);
   const hasAny = crowd.length > 0 || other.length > 0;
   const dayId = d.id || `M${d.num}`;
   let fees = 0;
   let cost = 0;
   for (const l of crowd) {
-    // a carried line is the same people as an earlier scene — shown, never
-    // re-booked, so it can never be charged twice
-    const heads = l.fromAbove ? 0 : l.no || 0;
-    fees += heads * l.sup;
-    if (perHead) l.cost = heads * (perHead(dayId, l.tier) + l.sup);
-    cost += l.cost;
+    // the role is settled before any money is worked out — a deleted one falls
+    // back to the tier here, once, rather than at each place that prices it
+    resolveLineRole(l, px);
+    l.cost = lineCost(dayId, l, px);
+    fees = sumMoney(fees, money(l.sup, bookedHeads(l)));
+    cost = sumMoney(cost, l.cost);
   }
+  // the stunts/other column is reference-only and roles are crowd-only (the
+  // stunt agreement has its own mechanics), so nothing there names a role
   return {
     kind: "scene",
     dayId,
@@ -750,7 +855,11 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
   const includeOther = opts.includeOther !== false;
   const useWeeks = opts.weeks !== false;
   const showCosts = !!opts.costs;
-  const perHead = showCosts ? opts.perHead : undefined;
+  const px: CbPricer = {
+    perHead: showCosts ? opts.perHead : undefined,
+    roleLabel: opts.roleLabel,
+    missing: new Set<string>(),
+  };
   const rows: CbRow[] = [];
 
   const subtitle = [
@@ -774,13 +883,11 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
   const days = model.days || [];
   // Week numbers run in schedule order from the first dated day.
   const weekIndex = new Map<string, number>();
-  const keyOf = (d: ShootDay): string => {
-    const dt = d._date;
-    if (!dt) return "";
-    const m = new Date(dt);
-    m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
-    return m.toISOString().slice(0, 10);
-  };
+  // Same Monday-of-the-week key the cost engine uses. This used to be a local
+  // copy that finished with toISOString(), which converts to UTC and so
+  // labelled every BST week a day early; sharing weekKey keeps the printed
+  // document and the costed weeks describing the same weeks.
+  const keyOf = (d: ShootDay): string => (d._date ? weekKey(d._date) : "");
   for (const d of days) {
     const k = keyOf(d);
     if (k && !weekIndex.has(k)) weekIndex.set(k, weekIndex.size + 1);
@@ -792,18 +899,24 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
   let weekFees = 0;
   let weekCost = 0;
 
+  // The accumulators are ALWAYS reset, whether or not a week total was
+  // printed. They used to be reset only inside the early return's happy path,
+  // so an undated day (no week key, so it never opens a week of its own)
+  // banked its crowd into the running totals and the next real week absorbed
+  // it — a week total that counted people who were never in that week.
   const closeWeek = () => {
-    if (!useWeeks || !curWeek) return;
-    const n = weekIndex.get(curWeek);
-    rows.push({
-      kind: "weekTotal",
-      label: `WEEK ${n} TOTAL`,
-      no: weekCrowd,
-      otherLabel: includeOther ? `WEEK ${n} STUNTS/OTHER TOTAL` : "",
-      otherNo: includeOther ? weekOther : 0,
-      fees: weekFees,
-      cost: weekCost,
-    });
+    if (useWeeks && curWeek) {
+      const n = weekIndex.get(curWeek);
+      rows.push({
+        kind: "weekTotal",
+        label: `WEEK ${n} TOTAL`,
+        no: weekCrowd,
+        otherLabel: includeOther ? `WEEK ${n} STUNTS/OTHER TOTAL` : "",
+        otherNo: includeOther ? weekOther : 0,
+        fees: weekFees,
+        cost: weekCost,
+      });
+    }
     weekCrowd = 0;
     weekOther = 0;
     weekFees = 0;
@@ -834,18 +947,29 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
       if (b.from > 0 && clean(b.loc)) blocks.set(b.from, clean(b.loc).toUpperCase());
     }
 
+    // A banner announces the scene rows beneath it. It used to be pushed
+    // before the hideEmpty test, so location and SET MOVE headings printed
+    // with nothing under them — in the PDF and in Excel — whenever every
+    // scene they introduced was empty. A banner now waits for a scene that
+    // actually prints, and carries forward if the first scene of its block is
+    // hidden (the block is still starting, just a scene later).
+    let pendingBanner: string | null = null;
     (d.scenes || []).forEach((sc, i) => {
       const banner = blocks.get(i);
-      if (banner) rows.push({ kind: "banner", label: banner });
-      for (const t of sc.tags || []) {
-        if (/^(SET MOVE|IF TIME ALLOWS|COMPANY MOVE|UNIT MOVE|MOVE)$/i.test(t)) {
-          rows.push({ kind: "banner", label: clean(t).toUpperCase() });
-        }
-      }
+      if (banner) pendingBanner = banner;
+      const moves = (sc.tags || []).filter((t) =>
+        /^(SET MOVE|IF TIME ALLOWS|COMPANY MOVE|UNIT MOVE|MOVE)$/i.test(t)
+      );
 
-      const row = buildScene(d, sc, i, perHead);
+      const row = buildScene(d, sc, i, px);
       const empty = !row.crowd.length && !row.other.length;
       if (opts.hideEmpty && empty) return;
+
+      if (pendingBanner) {
+        rows.push({ kind: "banner", label: pendingBanner });
+        pendingBanner = null;
+      }
+      for (const t of moves) rows.push({ kind: "banner", label: clean(t).toUpperCase() });
 
       sceneCount++;
       if (!empty) crowded++;
@@ -862,7 +986,7 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     markDayBookings(dayScenes.map((s) => ({ num: s.sceneNum, lines: s.crowd })));
     markDayBookings(dayScenes.map((s) => ({ num: s.sceneNum, lines: s.other })));
     for (const s of dayScenes) {
-      refreshSceneFigures(s, perHead);
+      refreshSceneFigures(s, px);
       if (!includeOther) s.other = [];
     }
 
@@ -890,10 +1014,10 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     otherTotal += dayOther;
     weekCrowd += dayCrowd;
     weekOther += dayOther;
-    feesTotal += dayFees;
-    costTotal += dayMoney;
-    weekFees += dayFees;
-    weekCost += dayMoney;
+    feesTotal = sumMoney(feesTotal, dayFees);
+    costTotal = sumMoney(costTotal, dayMoney);
+    weekFees = sumMoney(weekFees, dayFees);
+    weekCost = sumMoney(weekCost, dayMoney);
   }
 
   closeWeek();
@@ -924,6 +1048,7 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     columns: layout.map((c) => c.header),
     layout,
     costs: showCosts,
+    missingRoles: [...px.missing],
     rows,
     totals: {
       crowd: crowdTotal,

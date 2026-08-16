@@ -1,0 +1,28 @@
+{
+  "_readme": [
+    "Committed counts of KNOWN, PRE-EXISTING problems. CI (.github/workflows/ci.yml)",
+    "re-counts them on every push via `npm run ratchet` and fails if a number went UP.",
+    "You are never asked to fix the existing ones — only to not add another.",
+    "If a count went DOWN, the ratchet lowers it here automatically; commit this file.",
+    "Do not hand-edit these numbers. Run `npm run ratchet:update` instead, and commit",
+    "that on its own with a note saying why (normally a tooling upgrade).",
+    "Full explanation: scripts/ratchet.mjs"
+  ],
+  "checks": {
+    "typecheck-js": {
+      "counts": {
+        "errors": 417
+      },
+      "command": "npm run typecheck:js",
+      "recorded": "2026-08-16"
+    },
+    "eslint": {
+      "counts": {
+        "errors": 3,
+        "warnings": 95
+      },
+      "command": "npm run lint",
+      "recorded": "2026-08-16"
+    }
+  }
+}

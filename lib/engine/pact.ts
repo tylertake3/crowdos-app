@@ -20,6 +20,7 @@ import {
   earlyBlocksFor,
   earlyTravelApplies,
 } from "./time";
+import { round2, sumMoney } from "./money";
 
 // PACT/FAA 2026 constants (rate card + client-confirmed canon)
 export const PACT = {
@@ -60,6 +61,17 @@ export interface PactSettings {
   earlyTravel: number; // early-call travel (≤ 06:00)
   travelA: number; //   travel allowance Cat A (TfL Zones 1–3)
   travelB: number; //   travel allowance Cat B (studios / beyond Z3)
+  // ---- night & public-holiday bases ----
+  // These used to be read straight off the frozen 2026 constants, so a user
+  // who typed next year's card into Production Settings still paid 2026 money
+  // on every night shoot and every bank holiday — silently, and only on the
+  // days that cost the most. Optional, defaulting to the card constants, so an
+  // existing saved settings object behaves exactly as it did.
+  night?: number; //    SA night basic daily rate
+  phDay?: number; //    public-holiday day base
+  phNight?: number; //  public-holiday night base
+  otPhDay?: number; //  day OT / 30 min on a public holiday
+  otPhNight?: number; // night OT & early call / 30 min on a public holiday
 }
 
 export const PACT_DEFAULTS: PactSettings = {
@@ -70,6 +82,11 @@ export const PACT_DEFAULTS: PactSettings = {
   earlyTravel: PACT.early,
   travelA: PACT.travelA,
   travelB: PACT.travelB,
+  night: PACT.nightBDR,
+  phDay: PACT.phDay,
+  phNight: PACT.phNight,
+  otPhDay: OTINC.phDay,
+  otPhNight: OTINC.phNight,
 };
 
 export function pactFrameworkHours(fw: "std" | "cwd"): number {
@@ -106,15 +123,15 @@ export function pactPerHead(
   // for Featured; confirmed as an oversight, fixed 2026-07-13.)
   const base = c.ph
     ? night
-      ? PACT.phNight
-      : PACT.phDay
+      ? (s.phNight ?? PACT.phNight)
+      : (s.phDay ?? PACT.phDay)
     : night
-      ? PACT.nightBDR
+      ? (s.night ?? PACT.nightBDR)
       : s.sa;
   const hol = base * s.hol; // 12.07% on the day rate only
 
-  const otDayInc = c.ph ? OTINC.phDay : s.otDay;
-  const otNightInc = c.ph ? OTINC.phNight : s.otNight;
+  const otDayInc = c.ph ? (s.otPhDay ?? OTINC.phDay) : s.otDay;
+  const otNightInc = c.ph ? (s.otPhNight ?? OTINC.phNight) : s.otNight;
 
   const fwH = pactFrameworkHours(c.fw);
   const { otBlocks, otDayB, otNightB } = otBlocksFor(call, wrap, fwH);
@@ -126,17 +143,25 @@ export function pactPerHead(
 
   const travel = c.travel === "A" ? s.travelA : c.travel === "B" ? s.travelB : 0;
 
+  // Every component settles to the penny before it is summed, and `per` is the
+  // sum of those settled components — one artist's chit for the day. Callers
+  // multiply this by the headcount, which is how the money is actually paid.
+  // See money.ts for why this is not cosmetic.
+  const q = {
+    base: round2(base),
+    hol: round2(hol),
+    ot: round2(ot),
+    earlyPay: round2(earlyPay),
+    earlyTravel: round2(earlyTravel),
+    travel: round2(travel),
+  };
   return {
-    base,
-    hol,
+    ...q,
     otBlocks,
     otDayB,
     otNightB,
-    ot,
     earlyBlocks,
-    earlyPay,
-    earlyTravel,
-    travel,
-    per: base + hol + ot + earlyPay + travel + earlyTravel,
+    // the breakdown a view prints now adds up to the total it prints beside it
+    per: sumMoney(q.base, q.hol, q.ot, q.earlyPay, q.travel, q.earlyTravel),
   };
 }

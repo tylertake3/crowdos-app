@@ -20,6 +20,7 @@ import {
   earlyTravelApplies,
 } from "./time";
 import type { PerHeadBreakdown } from "./pact";
+import { round2, sumMoney } from "./money";
 
 export const SP3 = {
   day: 255,
@@ -52,6 +53,14 @@ export interface SpactSettings {
   earlyTravel: number; // early-call travel (≤ 06:00)
   travelA: number; //    same A/B travel bands as PACT
   travelB: number;
+  // Public-holiday bases and OT, previously taken from the frozen 2026 card
+  // regardless of what the user had typed into their own rate card. Optional,
+  // defaulting to the card constants — an existing saved settings object is
+  // unaffected.
+  phDay?: number;
+  phNight?: number;
+  otPhDay?: number;
+  otPhNight?: number;
 }
 
 export const SPACT_DEFAULTS: SpactSettings = {
@@ -63,6 +72,10 @@ export const SPACT_DEFAULTS: SpactSettings = {
   earlyTravel: SP3.earlyTravel,
   travelA: 17.09,
   travelB: 23.89,
+  phDay: SP3.phDay,
+  phNight: SP3.phNight,
+  otPhDay: SP3_OT.phDay,
+  otPhNight: SP3_OT.phNight,
 };
 
 export function spactFrameworkHours(fw: "std" | "cwd"): number {
@@ -77,11 +90,17 @@ export function spactPerHead(
   const night = c.shift === "Night";
   const { call, wrap } = cdTimes(c);
 
-  const base = c.ph ? (night ? SP3.phNight : SP3.phDay) : night ? s.night : s.basic;
+  const base = c.ph
+    ? night
+      ? (s.phNight ?? SP3.phNight)
+      : (s.phDay ?? SP3.phDay)
+    : night
+      ? s.night
+      : s.basic;
   const hol = s.hol; // flat payment in lieu of holiday
 
-  const otDayInc = c.ph ? SP3_OT.phDay : s.otDay;
-  const otNightInc = c.ph ? SP3_OT.phNight : s.otNight;
+  const otDayInc = c.ph ? (s.otPhDay ?? SP3_OT.phDay) : s.otDay;
+  const otNightInc = c.ph ? (s.otPhNight ?? SP3_OT.phNight) : s.otNight;
 
   const fwH = spactFrameworkHours(c.fw);
   const { otBlocks, otDayB, otNightB } = otBlocksFor(call, wrap, fwH);
@@ -93,17 +112,22 @@ export function spactPerHead(
 
   const travel = c.travel === "A" ? s.travelA : c.travel === "B" ? s.travelB : 0;
 
+  // settled to the penny per artist before any headcount multiplies it —
+  // see money.ts
+  const q = {
+    base: round2(base),
+    hol: round2(hol),
+    ot: round2(ot),
+    earlyPay: round2(earlyPay),
+    earlyTravel: round2(earlyTravel),
+    travel: round2(travel),
+  };
   return {
-    base,
-    hol,
+    ...q,
     otBlocks,
     otDayB,
     otNightB,
-    ot,
     earlyBlocks,
-    earlyPay,
-    earlyTravel,
-    travel,
-    per: base + hol + ot + earlyPay + travel + earlyTravel,
+    per: sumMoney(q.base, q.hol, q.ot, q.earlyPay, q.travel, q.earlyTravel),
   };
 }

@@ -1,7 +1,22 @@
 // Location → TfL travel band (A = Zones 1–3 £17.09, B = studios / beyond
-// Zone 3 £23.89). Auto-detected from location text; unknown → A + flagged.
+// Zone 3 £23.89). Auto-detected from location text.
+//
+// UNKNOWN LOCATIONS TAKE BAND B. The gazetteer is a list of London and the
+// home-counties studios; anything it does not recognise is, by construction,
+// more likely to be out of town than in Zone 1. Defaulting to the CHEAPER band
+// under-budgeted every regional shoot and every location nobody had added yet,
+// and a budget that can only be revised UPWARDS is the one thing a producer
+// cannot forgive. It is also inconsistent with the rest of the engine, which
+// deliberately prices an unresolved choice at the higher candidate so the
+// number can only ever come down (crowd.ts effectiveTier).
+//
+// `known: false` rides alongside so the UI can say the location wasn't
+// recognised, and Production Settings → Locations overrides it outright.
 
 import type { TravelBand } from "./types";
+
+/** The band an unrecognised location is priced at — the safer (higher) one. */
+export const UNKNOWN_LOCATION_BAND: TravelBand = "B";
 
 const LOC_A = [
   "canary wharf", "chelsea", "hammersmith", "white city", "barbican",
@@ -37,11 +52,14 @@ export interface LocationBand {
   match?: string;
 }
 
-export function locationBand(loc: string | undefined | null): LocationBand {
+export function locationBand(
+  loc: string | undefined | null,
+  unknownBand: TravelBand = UNKNOWN_LOCATION_BAND
+): LocationBand {
   const l = (loc || "").toLowerCase();
-  if (!l) return { band: "A", known: false };
+  if (!l) return { band: unknownBand, known: false };
   // A checked first where phrases overlap (e.g. 'woolwich tunnel' A vs 'woolwich' B)
   for (const a of LOC_A) if (l.includes(a)) return { band: "A", known: true, match: a };
   for (const b of LOC_B) if (l.includes(b)) return { band: "B", known: true, match: b };
-  return { band: "A", known: false };
+  return { band: unknownBand, known: false };
 }
