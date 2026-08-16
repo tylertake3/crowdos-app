@@ -41,6 +41,50 @@ function pushLoc(day: ShootDay, loc: string): void {
   blocks.push({ loc: v, from: day.scenes.length });
 }
 
+// Page furniture. A schedule PDF puts a bare page number on its own line, and
+// a bare number reads as a perfectly good cast code — so "2" at the foot of a
+// page became a phantom cast member on whichever scene was open, and rode all
+// the way into the DOOD and the cast costing.
+const PAGE_LINE_RX = /^(?:-\s*)?(?:page\s*#?\s*:?\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?(?:\s*-)?$/i;
+export function isPageMarker(ln: string): boolean {
+  const s = ln.trim();
+  if (!s) return false;
+  if (/^page\b/i.test(s)) return true;
+  return PAGE_LINE_RX.test(s) && !/,/.test(s);
+}
+
+// The trailing run of cast-ish tokens on a line, found in ONE left-to-right
+// pass.
+//
+// This replaces /((?:\s*,?\s*(?:\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*))+)\s*$/,
+// which is catastrophically ambiguous: a run of N digits can be partitioned
+// into tokens 2^(N-1) ways and the engine explores all of them before failing.
+// 26 digits took 3.5 seconds and 36 took hours — in the user's browser, during
+// import. Scanning unit by unit and keeping the last contiguous run is linear
+// and produces the same answer.
+const CAST_UNIT_RX = /\s*,?\s*(?:\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*)/iy;
+export function castTailAt(s: string): { text: string; index: number } | null {
+  let end = s.length;
+  while (end > 0 && /\s/.test(s[end - 1])) end--;
+  if (!end) return null;
+  let runStart = -1; //  start of the contiguous run in progress
+  let runEnd = -1; //    one past its last character
+  let i = 0;
+  while (i < end) {
+    CAST_UNIT_RX.lastIndex = i;
+    const m = CAST_UNIT_RX.exec(s);
+    if (m && m[0].length && CAST_UNIT_RX.lastIndex <= end) {
+      if (runEnd !== i) runStart = i; // the previous run didn't reach here
+      runEnd = CAST_UNIT_RX.lastIndex;
+      i = runEnd;
+      continue;
+    }
+    i++;
+  }
+  if (runEnd !== end || runStart < 0) return null;
+  return { text: s.slice(runStart, end), index: runStart };
+}
+
 export function classifyToken(t: string): CastToken | null {
   const tok = t.trim();
   if (!tok) return null;
@@ -195,11 +239,9 @@ export function parseSchedule(text: string): ScheduleModel {
     if (scene && !scene.desc) {
       let desc = ln;
       if (pendingCastWrap) {
-        const tail = desc.match(
-          /((?:\s*,?\s*(?:\d+(?:sd|cd|dd|oc|d)?|st\d+|ST\d*))+)\s*$/
-        );
+        const tail = castTailAt(desc);
         if (tail) {
-          const toks = tail[1].split(",").map((s) => s.trim()).filter(Boolean);
+          const toks = tail.text.split(",").map((s) => s.trim()).filter(Boolean);
           if (toks.every((t) => RX.castCode.test(t))) {
             for (const t of toks) {
               const c = classifyToken(t);
@@ -214,7 +256,7 @@ export function parseSchedule(text: string): ScheduleModel {
       continue;
     }
     // stray continuation of cast tokens on their own line
-    if (scene) {
+    if (scene && !isPageMarker(ln)) {
       const toks = ln.split(",").map((s) => s.trim()).filter(Boolean);
       if (toks.length && toks.every((t) => RX.castCode.test(t))) {
         for (const t of toks) {
@@ -264,6 +306,10 @@ const EMB_DAY_RX =
 const IE_LINE_RX =
   /^(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\s+(Morning|Afternoon|Evening|Day|Night|Dawn|Dusk)\s+(.+)$/i;
 const V_SCENE_RX = /^Scene\s*#\s*([\d][\d.\/]*[A-Za-z]?)\s*(.*)$/i;
+// A leading number that belongs to the ADDRESS, not to the script day:
+// "10 DOWNING STREET", "221B BAKER ST", "45 CHURCH LANE".
+const ADDRESS_NUMBER_RX =
+  /^\d+[A-Za-z]?\s+[A-Za-z'’.\- ]*?\b(STREET|ST|ROAD|RD|AVENUE|AVE|LANE|LN|DRIVE|DR|CLOSE|CRESCENT|SQUARE|SQ|PLACE|TERRACE|GARDENS|WAY|HILL|COURT|MEWS|PARADE|ROW|WALK|GROVE|WHARF|EMBANKMENT)\b/i;
 // Emb scene line: "310.25 INT 1/8 pgs LOC:" or "312.64pt2 INT THE PARK - THE HUB 2/8 pgs"
 const EMB_SCENE_RX = /^(\d+\.\d+(?:\s*(?:pt\d+|[A-Za-z]))?)\s+(INT\/EXT|EXT\/INT|INT|EXT|I\/E)\b\s*(.*)$/i;
 // Generic scene lines (DD/POP-style Full Fats): "Scene # 7 INT SLUG Day",
@@ -306,10 +352,26 @@ function applySceneHead(scene: Scene, text: string): void {
   if (body) scene.slug = body;
 }
 
+// Nothing the parser cannot read is ever thrown away — it is kept verbatim
+// against its scene for manual triage (Scene.unparsed).
+function keepUnparsed(scene: Scene | null, ln: string): void {
+  if (!scene) return;
+  const v = ln.trim();
+  if (!v) return;
+  (scene.unparsed ||= []).push(v);
+}
+
 // People-block entries arrive in several shapes; junk (page headers, merged
-// vehicle columns) must not become phantom artists. A bare name is only
-// accepted if it has no digits and at least one lowercase letter.
-function pushCrowdEntry(list: NamedCount[], ln: string): void {
+// vehicle columns) must not become phantom artists.
+//
+// The bare-name test used to require a LOWERCASE letter and a length of 40 —
+// so "HUB WORKERS" and any description longer than a short phrase silently
+// vanished from the breakdown, taking real heads (and real money) with them.
+// It now accepts any all-letters name up to a generous length, rejects page
+// furniture explicitly, and hands anything it still won't take to `unparsed`
+// so it shows up for triage instead of disappearing.
+const MAX_CROWD_NAME = 80;
+function pushCrowdEntry(list: NamedCount[], ln: string, scene: Scene | null = null): void {
   const pc = ln.match(/\((\d+)\)\s*$/);
   if (pc) { list.push(parenCount(ln)); return; }
   const sq = ln.match(/^(.+?)\s*\[(\d+)\]$/);
@@ -322,7 +384,12 @@ function pushCrowdEntry(list: NamedCount[], ln: string): void {
     list.push({ name, count: +nx[1] });
     return;
   }
-  if (!/\d/.test(ln) && /[a-z]/.test(ln) && ln.length <= 40) list.push({ name: ln.trim(), count: 1 });
+  const v = ln.trim();
+  if (!isPageMarker(v) && !/\d/.test(v) && /[A-Za-z]{2}/.test(v) && v.length <= MAX_CROWD_NAME) {
+    list.push({ name: v, count: 1 });
+    return;
+  }
+  keepUnparsed(scene, ln);
 }
 
 function parenCount(str: string): NamedCount {
@@ -608,7 +675,14 @@ export function parseExpanded(text: string): ScheduleModel {
       pushScene();
       let body = m[3].replace(/\bLOC\s*:.*$/i, "").trim();
       let pages = "";
-      const pm = body.match(/((?:\d+\s+)?\d\/8|\d+)\s*(?:pgs\.?)?\s*$/);
+      // A bare trailing integer is NOT a page count. This used to eat the
+      // last word of any set whose name ends in a digit — "THE HOUSE -
+      // BEDROOM 2" became slug "THE HOUSE - BEDROOM" plus 2 pages, which both
+      // lost the room and inflated the day's page total. applySceneHead has
+      // always required "pgs" or an /8 fraction; this now matches it.
+      const pm =
+        body.match(/(?:^|\s)((?:\d+\s+)?\d\/8|\d+)\s*pgs\.?\s*$/i) ||
+        body.match(/(?:^|\s)((?:\d+\s+)?\d\/8)\s*$/);
       if (pm) { pages = pm[1].replace(/\s+/g, " "); body = body.slice(0, pm.index).trim(); }
       scene = {
         num: m[1].replace(/\s+/g, " "), part: "", ie: m[2].toUpperCase(), slug: body,
@@ -629,7 +703,15 @@ export function parseExpanded(text: string): ScheduleModel {
       if (pm) { pages = pm[1].replace(/\s+/g, " "); rest = rest.slice(0, pm.index).trim(); }
       let scriptDay = "";
       const sd = rest.match(/^(\d+[A-Z]?)\s+/);
-      if (sd) { scriptDay = sd[1]; rest = rest.slice(sd[0].length).trim(); }
+      // "EXT Day 8 DUNKESWELL - AIRFIELD" leads with a script day; "INT Day
+      // 10 DOWNING STREET" leads with a house number. Structurally identical,
+      // so the only honest signal is the set name itself: a leading number
+      // followed by a street/place word is part of the address and stays in
+      // the slug rather than becoming script day 10 at "DOWNING STREET".
+      if (sd && !ADDRESS_NUMBER_RX.test(rest)) {
+        scriptDay = sd[1];
+        rest = rest.slice(sd[0].length).trim();
+      }
       pendingIE = { ie: m[1].toUpperCase(), tod: m[2][0].toUpperCase() + m[2].slice(1).toLowerCase(), slug: rest, pages, scriptDay };
       block = null; // the previous scene's category block is over
       continue;
@@ -752,12 +834,12 @@ export function parseExpanded(text: string): ScheduleModel {
       // "STUNT CO-ORDINATOR", "STUNT CO-ORDINATOR DART", "2 x stunt drivers"
       const nx = ln.match(/^(\d+)\s*[xX]\s+(.+)$/);
       if (nx) scene.extras!.push({ name: nx[2].trim(), count: +nx[1] });
-      else if (!/\d/.test(ln) && ln.length <= 48) {
+      else if (!isPageMarker(ln) && !/\d/.test(ln) && /[A-Za-z]{2}/.test(ln) && ln.length <= MAX_CROWD_NAME) {
         // the coordinator often appears BOTH as an SC. cast line and in the
         // Stunts block — don't count them twice
         if (/CO-?ORD/i.test(ln) && scene.cast.some((c) => c.type === "stuntCoord")) continue;
         scene.extras!.push({ name: ln.trim(), count: 1 });
-      }
+      } else keepUnparsed(scene, ln);
       continue;
     }
     if (block === "Background Actors" || block === "Background") {
@@ -770,12 +852,12 @@ export function parseExpanded(text: string): ScheduleModel {
         scene.sa = Math.max(scene.sa, +m[1]);
       // named background ("8 airmen", "20 passersby") are SAs with a name,
       // NOT Featured — Featured is only the explicit category below
-      else pushCrowdEntry(scene.saChars!, ln);
+      else pushCrowdEntry(scene.saChars!, ln, scene);
       continue;
     }
     if (block === "SA's" || block === "SAs" || block === "Supporting Artists") {
       // Emb style: "HUB AGENTS [10]" — named SAs
-      pushCrowdEntry(scene.saChars!, ln);
+      pushCrowdEntry(scene.saChars!, ln, scene);
       continue;
     }
     if (block === "Featured Background Actors") { scene.featured!.push(parenCount(ln)); continue; }

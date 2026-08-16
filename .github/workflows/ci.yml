@@ -1,0 +1,121 @@
+# CrowdOS CI — the safety net that runs whether or not anyone remembers to.
+#
+# This repo already had 516 tests and a working `build:check`. What it did not
+# have was anything that ran them. This workflow closes that gap: every push and
+# every pull request gets the full check suite, and a red tick on the commit is
+# the only thing standing between a broken build and a producer losing an
+# afternoon's work.
+#
+# It is ONE job on purpose. Splitting into parallel jobs would look faster but
+# each job pays the ~40s `npm ci` again; a single job installs once and runs the
+# checks fast-first, so a broken test fails in about a minute rather than after
+# a full Next.js build.
+#
+# TOTAL RUNTIME: roughly 3-4 minutes cold, ~2 minutes with a warm npm cache.
+# Free for public repos; well inside the free minutes for a private one.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  # Lets you re-run the checks by hand from the Actions tab without pushing.
+  workflow_dispatch:
+
+# A new push to the same branch cancels the previous run. Without this, pushing
+# three fixes in a row queues three full builds and you wait for the stale ones.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Tests, types, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # NODE VERSION: pinned to 22 (the active LTS). The floor is set by the
+      # dependencies, not by preference:
+      #   next 15.5   requires ^18.18 || ^19.8 || >=20
+      #   vitest 4.1  requires ^20 || ^22 || >=24   <- the binding constraint
+      # so 20 or 22 both work and 22 is the one to be on for the next two years.
+      # `package.json` carries a matching `engines.node` field so a contributor
+      # on an ancient Node gets a warning locally instead of a confusing failure.
+      #
+      # `cache: npm` keys the cache on package-lock.json — it is restored on
+      # every run and only re-downloads when a dependency actually changes.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # `npm ci` not `npm install`: it installs exactly the tree in
+      # package-lock.json and fails loudly if the lock and package.json disagree,
+      # which is the whole point of running this in CI.
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Fast checks first, so a typo fails in seconds not minutes ───────────
+
+      # Reported but NOT enforced here. The enforcement is the ratchet step
+      # below, which is the one that can fail. This step exists so the full,
+      # readable lint output is in the log every run — including the pre-existing
+      # findings — rather than only appearing when something regresses.
+      - name: Lint (report)
+        continue-on-error: true
+        run: npm run lint
+
+      # THE RATCHET — the step that actually gates.
+      #
+      # The repo carries two piles of known, pre-existing findings: ~420 loose-DOM
+      # type errors in lib/board/*.js (a near-verbatim port of prototype_1.html)
+      # and ~110 lint findings, mostly in the same file. Fixing them all before
+      # launch is not realistic and pretending they do not exist is how they grow.
+      #
+      # So this step re-counts them and compares against the numbers committed in
+      # scripts/baselines/quality-baseline.json:
+      #
+      #   count UP    -> FAILS. Your change introduced a new one. Fix that one.
+      #   count SAME  -> passes.
+      #   count DOWN  -> passes, and rewrites the baseline lower in the working
+      #                  copy so you can commit the improvement. The ceiling can
+      #                  only ever descend.
+      #
+      # This is why a huge legacy file can be under a type-checker and a linter
+      # on day one without a week of cleanup. Mechanism is documented in full at
+      # the top of scripts/ratchet.mjs.
+      - name: Quality ratchet (lint + board type-check must not regress)
+        run: npm run ratchet
+
+      - name: Type-check (TypeScript)
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      # ── Slowest last ───────────────────────────────────────────────────────
+      # Catches the failures the type-checker cannot: a bad route segment config,
+      # a server/client component boundary violation, a bad import in a page.
+      #
+      # No environment variables are set, deliberately. Every env read in this
+      # app is runtime-guarded (lib/supabase.ts returns null, the parse-schedule
+      # route checks its key), so the build must succeed without secrets — and if
+      # someone adds a build-time hard dependency on a secret, this step is where
+      # that gets caught, before Vercel does it in production.
+      #
+      # `build:check` passes `--no-lint`. Once eslint.config.mjs exists, Next
+      # runs ESLint inside `next build` and fails the build on any error — which
+      # would make a stray unused variable block a Vercel production deploy.
+      # Linting is gated by the ratchet step above instead; the deploy path stays
+      # about whether the code compiles. `npm run build` does the same, so this
+      # step and Vercel behave identically.
+      - name: Production build
+        run: npm run build:check

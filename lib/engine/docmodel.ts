@@ -372,7 +372,6 @@ export function projectBreakdown(model: ScheduleModel, opts: ProjectOpts): DocMo
     // ---- day totals. Derived always wins; a declared figure from an import is
     // shown beside it, never used to pad and never blocking.
     const lastDataRow = n;
-    const declared = d.declaredTotals?.SA ?? d.declaredTotals?.Featured ?? undefined;
     const declaredCrowd =
       d.declaredTotals
         ? (["SA", "Featured", "SPACT"] as ReqTier[]).reduce(

@@ -116,13 +116,35 @@ describe("Prototype grand totals — demo schedule, default rates", () => {
   // BASELINE HISTORY:
   // · £574,342 (original notes) — testing residue in localStorage, discarded.
   // · £574,155 — clean prototype, confirmed by Tyler 2026-07-13.
-  // · £596,689 (current) — 2026-07-14 parser correction: Day 77's crowd is
-  //   written "160 x c" (lowercase) in the schedule; the prototype's
-  //   uppercase-only pattern missed it, undercounting the day by 159 SAs
-  //   (~£22.5k). See prototype-parity.test.ts (M77).
-  it("crowd mode grand total = £596,689 (Full Schedule, incl. Day 77 lowercase-crowd fix)", () => {
+  // · £596,689 — 2026-07-14 parser correction: Day 77's crowd is written
+  //   "160 x c" (lowercase) in the schedule; the prototype's uppercase-only
+  //   pattern missed it, undercounting the day by 159 SAs (~£22.5k).
+  // · £604,837 (current) — 2026-08-15, TWO deliberate money changes:
+  //   · unrecognised locations now take travel band B, not A. 18 of this
+  //     schedule's 66 costed days name a place the gazetteer doesn't know, and
+  //     each was budgeted £6.80 per head short. +£8,160.
+  //   · per-head figures settle to the penny before being multiplied by the
+  //     headcount, and totals are built from settled components, so the per-day
+  //     column foots to the grand total. −£12 across the schedule.
+  it("crowd mode grand total = £604,837 (Full Schedule, band-B default for unknown locations)", () => {
     const crowd = computeCrowdCosts(mAll);
-    expect(Math.round(crowd.grand)).toBe(596689);
+    expect(Math.round(crowd.grand)).toBe(604837);
+  });
+
+  it("with the prototype's band default, the total is the old £596,689 less penny quantisation", () => {
+    const crowd = computeCrowdCosts(mAll, {}, { ...CROWD_DEFAULTS, unknownBand: "A" });
+    expect(Math.round(crowd.grand)).toBe(596677);
+  });
+
+  it("the per-day column foots to the grand total, in both engines", () => {
+    const add = (xs: number[]) => xs.reduce((a, x) => Math.round(a * 100 + x * 100) / 100, 0);
+    const crowd = computeCrowdCosts(mAll);
+    expect(add(Object.values(crowd.perDay).map((e) => e.cost))).toBe(crowd.grand);
+    const stunt = computeStuntCosts(mAll);
+    expect(add(Object.values(stunt.perDay).map((e) => e.cost)) + stunt.sdTotal).toBeCloseTo(
+      stunt.grand,
+      2
+    );
   });
 
   it("stunt mode grand total = £261,270 (Full Schedule)", () => {
@@ -263,10 +285,14 @@ describe("Production base-day budget assumptions (unedited days)", () => {
       castMap: {}, notes: [],
     } as any, "Main");
 
-  it("absent baseDay keeps the flat default exactly", () => {
+  it("absent baseDay keeps the flat default, settled per head", () => {
     const grand = computeCrowdCosts(model()).grand;
-    // 10 SA × (£111.21 × 1.1207) + 10 × £17.09 travel (Barbican = Cat A)
-    expect(Math.round(grand * 100) / 100).toBe(Math.round((10 * 111.21 * 1.1207 + 10 * 17.09) * 100) / 100);
+    // 10 SA × (£111.21 + £13.42 holiday) + 10 × £17.09 travel (Barbican = Cat A).
+    // The holiday line settles to £13.42 on ONE artist's chit before it is
+    // paid ten times — it is no longer 10 × £13.4229… carried at full float
+    // precision and rounded once at the end (see lib/engine/money.ts).
+    const perHead = 111.21 + Math.round(111.21 * 0.1207 * 100) / 100;
+    expect(grand).toBe(Math.round((10 * perHead + 10 * 17.09) * 100) / 100);
   });
 
   it("baseDay {std, 0h OT} equals the flat default (framework day, no OT)", () => {

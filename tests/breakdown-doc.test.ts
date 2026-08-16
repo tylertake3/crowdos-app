@@ -706,6 +706,194 @@ describe("crowd breakdown document", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Custom roles on the circulated document.
+  //
+  // This is the artefact a producer signs off, so a role line must be priced
+  // through its ROLE here, at the source — not matched back to a schedule
+  // group by name afterwards, which two same-named groups defeat silently.
+  // -------------------------------------------------------------------------
+  describe("custom roles", () => {
+    // £250 stand-in, £130 SA, £300 SPACT — deliberately far apart, so a line
+    // priced on the wrong card cannot look right by coincidence
+    const RATES: Record<string, number> = { "role-si": 250, "role-pd": 175.5 };
+    const rate = (_dayId: string, tier: string, roleId?: string): number =>
+      roleId ? (RATES[roleId] ?? 0) : tier === "SPACT" ? 300 : 130;
+    const label = (id: string): string | undefined =>
+      ({ "role-si": "Stand-in", "role-pd": "Picture double" })[id];
+    const priced = (m: ScheduleModel, roles = true) =>
+      projectCrowdDoc(m, {
+        costs: true,
+        perHead: rate,
+        dayCost: () => 5_000,
+        ...(roles ? { roleLabel: label } : {}),
+      });
+    const scenesOf = (doc: ReturnType<typeof projectCrowdDoc>) =>
+      doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+
+    it("says nothing about roles on a production that has none", () => {
+      const doc = priced(model([day({ scenes: [scene({ num: "1", sa: 20 })] })]));
+      expect(doc.missingRoles).toEqual([]);
+      const line = scenesOf(doc)[0].crowd[0];
+      expect(line.roleId).toBeUndefined();
+      expect(line.roleLabel).toBeUndefined();
+      expect(line.cost).toBe(20 * 130);
+    });
+
+    it("prices a role line at the role's rate, not its tier's", () => {
+      const doc = priced(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Stand-ins", count: 4, roleId: "role-si" }],
+              }),
+            ],
+          }),
+        ])
+      );
+      const line = scenesOf(doc)[0].crowd[0];
+      expect(line.roleId).toBe("role-si");
+      expect(line.roleLabel).toBe("Stand-in");
+      expect(line.roleMissing).toBe(false);
+      expect(line.cost).toBe(4 * 250); // not 4 × 130
+      expect(scenesOf(doc)[0].cost).toBe(1_000);
+    });
+
+    it("settles a role line to the penny, per head", () => {
+      const doc = priced(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Doubles", count: 3, roleId: "role-pd", sup: 12.5 }],
+              }),
+            ],
+          }),
+        ])
+      );
+      // one artist's day settled first (175.50 + 12.50), then paid 3 times
+      expect(scenesOf(doc)[0].crowd[0].cost).toBe(564);
+      expect(scenesOf(doc)[0].fees).toBe(37.5);
+    });
+
+    it("prices two same-named groups on different scenes on their own roles", () => {
+      const doc = priced(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Guards", count: 6, roleId: "role-si" }],
+              }),
+              scene({
+                num: "2",
+                saChars: [{ name: "Guards", count: 6, roleId: "role-pd" }],
+              }),
+              // and the same name again on no role at all — plain SA
+              scene({ num: "3", saChars: [{ name: "Guards", count: 6 }] }),
+            ],
+          }),
+        ])
+      );
+      const sc = scenesOf(doc);
+      expect(sc[0].crowd[0].cost).toBe(6 * 250);
+      expect(sc[1].crowd[0].cost).toBe(6 * 175.5);
+      expect(sc[2].crowd[0].cost).toBe(6 * 130);
+      // three different groups of people, so none of them is "(FROM ABOVE)"
+      expect(sc.map((s) => s.crowd[0].fromAbove)).toEqual([false, false, false]);
+      const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
+      expect(total.no).toBe(18);
+    });
+
+    it("still pools one role's group across the scenes it appears in", () => {
+      const doc = priced(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Guards", count: 6, roleId: "role-si" }],
+              }),
+              scene({
+                num: "2",
+                saChars: [{ name: "Guards", count: 6, roleId: "role-si" }],
+              }),
+            ],
+          }),
+        ])
+      );
+      const sc = scenesOf(doc);
+      expect(sc[1].crowd[0].fromAbove).toBe(true);
+      expect(sc[1].crowd[0].cost).toBe(0); // the same six people, charged once
+      const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
+      expect(total.no).toBe(6);
+    });
+
+    it("falls a deleted role back to its tier and reports it", () => {
+      const doc = priced(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Stand-ins", count: 4, roleId: "role-gone" }],
+                spacts: [{ name: "Barman", count: 1, roleId: "role-gone" }],
+              }),
+            ],
+          }),
+        ])
+      );
+      const [sa, spact] = scenesOf(doc)[0].crowd;
+      expect(sa.roleMissing).toBe(true);
+      expect(sa.roleLabel).toBeUndefined();
+      expect(sa.cost).toBe(4 * 130); // its own tier — never zero, never guessed
+      expect(spact.cost).toBe(1 * 300);
+      // reported once, so the UI can offer to re-point or re-create it
+      expect(doc.missingRoles).toEqual(["role-gone"]);
+    });
+
+    it("treats a caller that knows no roles as having none of them", () => {
+      const doc = priced(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Stand-ins", count: 4, roleId: "role-si" }],
+              }),
+            ],
+          }),
+        ]),
+        false
+      );
+      expect(doc.missingRoles).toEqual(["role-si"]);
+      expect(scenesOf(doc)[0].crowd[0].cost).toBe(4 * 130);
+    });
+
+    it("names the role even with the money columns off", () => {
+      const doc = projectCrowdDoc(
+        model([
+          day({
+            scenes: [
+              scene({
+                num: "1",
+                saChars: [{ name: "Stand-ins", count: 4, roleId: "role-si" }],
+              }),
+            ],
+          }),
+        ]),
+        { roleLabel: label }
+      );
+      const line = (doc.rows.filter((r) => r.kind === "scene") as CbScene[])[0].crowd[0];
+      expect(line.roleLabel).toBe("Stand-in");
+      expect(line.cost).toBe(0);
+      expect(doc.missingRoles).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Column layout — the builder reorders the segments and the whole document
   // (screen / .xlsx / .csv) follows, with merges and total formulas tracking
   // wherever each column lands.

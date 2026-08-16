@@ -22,6 +22,9 @@ npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# eslint's local result cache (only created if you pass --cache)
+.eslintcache
+
 # vercel
 .vercel
 

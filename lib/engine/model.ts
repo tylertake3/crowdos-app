@@ -18,30 +18,130 @@ function monthNum(word: string): number | null {
   return null;
 }
 
+// A 2-digit year on a call sheet is always this century in practice ("14/04/26"
+// means 2026). The 70 pivot is the usual convention and keeps a stray "99"
+// reading as 1999 rather than 2099.
+function expandYear(raw: string): number {
+  const n = +raw;
+  if (raw.length >= 3) return n;
+  return n <= 69 ? 2000 + n : 1900 + n;
+}
+
+// The year assumed when a schedule states none at all. Deliberately NOT a
+// hardcoded 2026: a hardcoded year silently backdates (or forward-dates) every
+// undated day the moment the calendar rolls over, which drags week grouping,
+// sorting and the calendar with it. Callers that know better (prepModel, which
+// can see the schedule's other days) pass their own anchor.
+export function defaultDateYear(): number {
+  return new Date().getFullYear();
+}
+
+export interface ParsedDate {
+  date: Date;
+  /** false = the source text stated no year and `date` uses the anchor year. */
+  hasYear: boolean;
+}
+
+// Build a local-midnight date, rejecting rollovers: the Date constructor
+// happily turns 31 February into 3 March, which silently invents a shoot day
+// on the wrong date rather than admitting the source is unparseable.
+function makeDate(y: number, mo: number, dd: number): Date | null {
+  if (!(mo >= 0 && mo <= 11) || !(dd >= 1 && dd <= 31)) return null;
+  const d = new Date(y, mo, dd);
+  if (d.getFullYear() !== y || d.getMonth() !== mo || d.getDate() !== dd) return null;
+  return d;
+}
+
 // NOTE: the /i flags matter. Schedules routinely shout their dates
 // ("MONDAY 14TH APRIL"), and a case-sensitive ordinal suffix left every such
 // day with a null _date — which silently broke date sorting, week grouping,
 // continuity and the calendar for that production.
-export function parseDayDate(d: Pick<ShootDay, "date">): Date | null {
-  let m = d.date.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z.]+)(?:\s+(\d{4}))?/i);
+//
+// Accepted shapes, in order of decreasing certainty:
+//   ISO            2025-04-14, 2025/04/14
+//   named month    14 April 2025 · MONDAY 14TH APRIL · Sept. 3 2025 · April 14th, 2025
+//   UK numeric     14/04/2025 · 14/04/25 · 14.04.25 · 14-04-2025  (DD/MM — never MM/DD)
+export function parseDayDateFull(
+  d: Pick<ShootDay, "date">,
+  opts: { year?: number } = {}
+): ParsedDate | null {
+  const text = (d.date || "").trim();
+  if (!text) return null;
+  const anchor = opts.year ?? defaultDateYear();
+
+  // ISO first — unambiguous, and no other shape can be mistaken for it.
+  let m = text.match(/(?:^|[^\d])(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?![\d])/);
+  if (m) {
+    const dt = makeDate(+m[1], +m[2] - 1, +m[3]);
+    return dt ? { date: dt, hasYear: true } : null;
+  }
+
+  // Named month, day-first: "14 April 2025", "MONDAY 14TH APRIL", "14 Apr 25",
+  // "23-Sep-2024". The year lookahead keeps a trailing call time ("3 September
+  // 07:00") from being read as the year 2007.
+  m = text.match(
+    /(\d{1,2})(?:st|nd|rd|th)?[\s\-]+([A-Za-z.]+)(?:[,\s\-]+(\d{4}|\d{2})(?![\d:]))?/i
+  );
   let mo = m && monthNum(m[2]);
-  if (m && mo != null) return new Date(+(m[3] || 2026), mo, +m[1]);
-  m = d.date.match(/([A-Za-z.]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i);
+  if (m && mo != null) {
+    const dt = makeDate(m[3] ? expandYear(m[3]) : anchor, mo, +m[1]);
+    return dt ? { date: dt, hasYear: !!m[3] } : null;
+  }
+
+  // Named month, month-first: "April 14th, 2025"
+  m = text.match(
+    /([A-Za-z.]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(?:(\d{4}|\d{2})(?![\d:]))?/i
+  );
   mo = m && monthNum(m[1]);
-  if (m && mo != null) return new Date(+(m[3] || 2026), mo, +m[2]);
+  if (m && mo != null) {
+    const dt = makeDate(m[3] ? expandYear(m[3]) : anchor, mo, +m[2]);
+    return dt ? { date: dt, hasYear: !!m[3] } : null;
+  }
+
+  // UK numeric. DD/MM order always — this is a British production tool, and a
+  // schedule that means 4 March writes 04/03. Reading it as April 3rd would
+  // move the day a month and take the week grouping and calendar with it.
+  m = text.match(
+    /(?:^|[^\d])(\d{1,2})[/.\-](\d{1,2})(?:[/.\-](\d{4}|\d{2}))?(?![\d:])/
+  );
+  if (m) {
+    const dt = makeDate(m[3] ? expandYear(m[3]) : anchor, +m[2] - 1, +m[1]);
+    return dt ? { date: dt, hasYear: !!m[3] } : null;
+  }
   return null;
 }
 
-// Week key, verbatim from the prototype. NOTE: toISOString shifts the local
-// Monday back to the Sunday UTC date during British Summer Time, so week
-// labels render as e.g. "w/c 5 Jul" for the week starting Monday 6 Jul —
-// that is exactly what the prototype shows, so it is preserved (grouping is
-// unaffected). Tests pin behaviour by running with TZ=Europe/London.
+export function parseDayDate(
+  d: Pick<ShootDay, "date">,
+  opts: { year?: number } = {}
+): Date | null {
+  return parseDayDateFull(d, opts)?.date ?? null;
+}
+
+// Week key = the Monday of the week the date falls in, as a plain local
+// YYYY-MM-DD string.
+//
+// This used to build the local Monday midnight and then call toISOString(),
+// which converts to UTC — so throughout British Summer Time the Monday came
+// back labelled as the previous Sunday. Every production week was captioned a
+// day early all summer, and the row either side of the BST→GMT change implied
+// an 8-day week. Formatting the LOCAL date components has no such round-trip
+// and is correct in every host timezone.
+const pad2 = (n: number) => String(n).padStart(2, "0");
 export function weekKey(date: Date): string {
   const d = new Date(date);
-  const wd = (d.getDay() + 6) % 7;
+  d.setHours(0, 0, 0, 0);
+  const wd = (d.getDay() + 6) % 7; // 0 = Monday
   d.setDate(d.getDate() - wd);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// Parse a weekKey back to a local Date. Anything rendering a week caption must
+// use this rather than `new Date("2026-07-06")`, which the platform reads as
+// UTC midnight and shifts west of Greenwich.
+export function weekKeyDate(key: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  return m ? makeDate(+m[1], +m[2] - 1, +m[3]) : null;
 }
 
 export const isPerf = (c: CastToken) =>
@@ -94,11 +194,61 @@ function normalizeLocBlocks(d: ShootDay): void {
   else delete d.locBlocks;
 }
 
+// A schedule that states no year on its day lines still knows what year it is
+// — its OTHER days say so. Infer each undated-year day's year from the nearest
+// day in schedule order that does state one, then correct for a shoot that runs
+// across New Year (a December day followed by a January one is the next year).
+// Only when the whole document states no year anywhere do we fall back to the
+// anchor, and those days are flagged so the UI can say the year was assumed.
+function resolveYears(model: ScheduleModel): void {
+  const parsed = model.days.map((d) => parseDayDateFull(d));
+  const anchorIdx = parsed.findIndex((p) => p && p.hasYear);
+  const anchorYear = anchorIdx >= 0 ? parsed[anchorIdx]!.date.getFullYear() : defaultDateYear();
+
+  let carryYear = anchorYear;
+  let prevMonth: number | null = null;
+  model.days.forEach((d, i) => {
+    const p = parsed[i];
+    if (!p) {
+      d._date = null;
+      delete d._dateYearAssumed;
+      return;
+    }
+    if (p.hasYear) {
+      carryYear = p.date.getFullYear();
+      prevMonth = p.date.getMonth();
+      d._date = p.date;
+      delete d._dateYearAssumed;
+      return;
+    }
+    // year absent: continue from the running year, rolling over at New Year
+    let y = carryYear;
+    if (prevMonth != null && prevMonth >= 10 && p.date.getMonth() <= 1) y = carryYear + 1;
+    const dt = parseDayDate(d, { year: y });
+    d._date = dt;
+    prevMonth = dt ? dt.getMonth() : prevMonth;
+    if (dt) carryYear = dt.getFullYear();
+    // flagged only when NOTHING in the document stated a year — a day whose
+    // year came from a neighbouring dated day is as good as stated
+    if (anchorIdx < 0) d._dateYearAssumed = true;
+    else delete d._dateYearAssumed;
+  });
+}
+
 export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleModel {
-  for (const d of model.days) {
+  resolveYears(model);
+  model.days.forEach((d, i) => {
     d.unit = unit;
-    d.id = (unit === "2nd" ? "U" : "M") + d.num;
-    d._date = parseDayDate(d);
+    // A carried day that already has an id KEEPS it. An already-shot day whose
+    // number the new schedule reuses is stitched in under a suffixed id
+    // (`M12-Blue`) precisely so it cannot collide with the live D12; rebuilding
+    // the id from unit+number here put the collision straight back, and two
+    // day records sharing an id means one silently overwrites the other in the
+    // per-day cost table — the day column then double-counts one day while the
+    // grand total counts both.
+    if (!(d.carried && d.id)) d.id = (unit === "2nd" ? "U" : "M") + d.num;
+    // the record's own identity, unique whatever the ids do
+    d._uid = d.id + "@" + i;
     // Most Full Fat schedules state no day-level location — the set only
     // appears in each scene's slugline. parseExpanded already falls back to
     // the first scene's set; do it here too so an AI-read model (which
@@ -115,7 +265,7 @@ export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleM
     }
     if (/^studio$/i.test((d.loc || "").trim())) d.loc = "OMAX Studio";
     normalizeLocBlocks(d);
-  }
+  });
   model.multiUnit = false;
   return model;
 }
