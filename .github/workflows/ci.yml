@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # NODE VERSION: pinned to 22 (the active LTS). The floor is set by the
       # dependencies, not by preference:
@@ -52,7 +52,7 @@ jobs:
       # `cache: npm` keys the cache on package-lock.json — it is restored on
       # every run and only re-downloads when a dependency actually changes.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
