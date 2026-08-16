@@ -205,6 +205,40 @@ Performer £600/day, coordinator £1,000/day; + £17.50 holiday flat; + 55.5% us
 insurance £17.50 charged on the first 2 working days per person per week (shared across units);
 per-day stunt adjustments (⚡) added per event.
 
+## The rate card is the source of truth (2026-08)
+The numbers above are the DEFAULTS of a card, not constants the engine reaches past the card to
+use. Every rule a crowd rate card prints is one entry in `CROWD_SCHEMA` (`lib/board/app.js`) —
+day/night/public-holiday rates, half days, fittings, rehearsals, shift and non-performance calls,
+holiday, framework hours, all four overtime figures, broken turnaround, the four travel bands,
+supplementary categories A–E, the three meal-break penalties across day/night/PH-day/PH-night,
+meal allowances, cancellation fees and intimacy/nudity fees.
+
+- SA and SPACT share the SAME schema, so a card duplicates cleanly from one talent type to the
+  other and a new agreement is a new set of numbers rather than new code. Field ids are derived
+  per talent type (`crowdFieldId`); the eleven ids that predate the schema keep their names, so
+  every saved card, production override and hidden calculator input still resolves.
+- Anything the engine does not yet charge automatically is marked `ref:true` and shown in the
+  editor with a "reference" tag. Do not quietly promote one to a charged field without saying so.
+- `PactSettings` / `SpactSettings` now carry `fwStd`/`fwCwd` and the full night + public-holiday
+  set. All are optional and default to the frozen constants, so an older settings object behaves
+  exactly as it did — but `crowdSettingsFromDOM()` fills them from the resolved card, so a user
+  who types next year's card is actually paid on it. Before this, night shoots and bank holidays
+  silently charged 2026 money on exactly the days that cost the most.
+- The SPACT card carries its own overtime and travel. `cdPerHead` only falls back to the PACT
+  card's travel band when the SPACT card is silent on it.
+- Meal penalties gained a third key (`supper`) and public-holiday rates. A card with no PH rate
+  keeps charging its ordinary day/night figure.
+- The supplementary-fee picker and the calculator's meal ticks are built from the active card
+  (`supsNow`, `mealsNow`), refreshed by `applyRateVals`. A fee already typed on a line survives a
+  card switch.
+- Cards carry paperwork too: effective dates, an agreement reference, notes, and the source PDF.
+  Standards ship their real documents in `public/rate-cards/`; a user's own upload goes to the
+  private `schedule-files` bucket under `<uid>/rate-cards/…`. The preview draws pages with pdf.js
+  rather than an iframe — the app sends `frame-ancestors 'none'` on everything it serves, so even
+  its own PDFs cannot be framed.
+- Duplicate is how you get an editable copy of a standard, and how next year's card starts from
+  this year's. Standards themselves stay read-only.
+
 ## Architecture notes worth keeping
 - All totals derive from a single per-head function — never duplicate rate maths in views.
 - Per-day overrides (shift, framework, call/wrap, travel, PH, characters with scene refs,

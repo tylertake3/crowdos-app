@@ -187,19 +187,45 @@ export function upliftProvenanceLines(u: UpliftSettings | undefined): string[] {
 // a late lunch on a 200-head day is ~£4,676 in one hit — routine on big crowd
 // days, and exactly the kind of money a producer's own sheet carries.
 
-export type MealPenaltyKey = "short" | "late";
+export type MealPenaltyKey = "short" | "late" | "supper";
+
+export const MEAL_PENALTY_KEYS: MealPenaltyKey[] = ["short", "late", "supper"];
 
 export interface MealPenaltyRate {
   label: string;
   day: number;
   night: number;
+  /** public-holiday rates. Optional — a card that doesn't print them falls
+   *  back to the ordinary day/night figures, which is what the app charged
+   *  before public-holiday meal money was on the card at all. */
+  phDay?: number;
+  phNight?: number;
 }
 
-export type MealPenaltySettings = Record<MealPenaltyKey, MealPenaltyRate>;
+export type MealPenaltySettings = Partial<Record<MealPenaltyKey, MealPenaltyRate>>;
 
-export const MEAL_PENALTY_DEFAULTS: MealPenaltySettings = {
-  short: { label: "Short lunch (meal break under 1 hour)", day: 23.38, night: 35.08 },
-  late: { label: "Late lunch (no break within 6 hours of call)", day: 23.38, night: 35.08 },
+export const MEAL_PENALTY_DEFAULTS: Record<MealPenaltyKey, MealPenaltyRate> = {
+  short: {
+    label: "Short lunch (meal break under 1 hour)",
+    day: 23.38,
+    night: 35.08,
+    phDay: 35.08,
+    phNight: 52.58,
+  },
+  late: {
+    label: "Late lunch (no break within 6 hours of call)",
+    day: 23.38,
+    night: 35.08,
+    phDay: 35.08,
+    phNight: 52.58,
+  },
+  supper: {
+    label: "Short supper (no 2nd break within 13 hours of call)",
+    day: 23.38,
+    night: 35.08,
+    phDay: 35.08,
+    phNight: 52.58,
+  },
 };
 
 /** Which penalties a day incurred. Absent / all-false = none, which is the
@@ -216,15 +242,20 @@ export interface MealPenaltyCost {
 export function mealPenaltyPerHead(
   meals: DayMeals | undefined,
   shift: "Day" | "Night",
-  s: MealPenaltySettings = MEAL_PENALTY_DEFAULTS
+  s: MealPenaltySettings = MEAL_PENALTY_DEFAULTS,
+  ph = false
 ): MealPenaltyCost {
   const lines: { key: MealPenaltyKey; label: string; per: number }[] = [];
   if (meals) {
-    for (const key of ["short", "late"] as MealPenaltyKey[]) {
+    for (const key of MEAL_PENALTY_KEYS) {
       if (!meals[key]) continue;
       const rate = s?.[key] ?? MEAL_PENALTY_DEFAULTS[key];
+      const night = shift === "Night";
+      // a public-holiday rate only applies when the card prints one; without
+      // it the ordinary day/night figure stands
+      const phRate = night ? rate.phNight : rate.phDay;
       const per = round2(
-        (shift === "Night" ? rate.night : rate.day) || 0
+        (ph && phRate ? phRate : night ? rate.night : rate.day) || 0
       );
       if (!per) continue;
       lines.push({ key, label: rate.label || MEAL_PENALTY_DEFAULTS[key].label, per });

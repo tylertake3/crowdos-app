@@ -67,6 +67,8 @@ updates:
       # eslint 10 will change the config format again. Not a Tuesday job.
       - dependency-name: eslint
         update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
       - dependency-name: typescript-eslint
         update-types: ["version-update:semver-major"]
       # The Anthropic SDK moves fast and its majors change request shapes that

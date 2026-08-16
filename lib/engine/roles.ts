@@ -160,6 +160,9 @@ export function rolePactSettings(
     phNight: num(role.phNight, scaledFromDay(day, cardDay, p.phNight ?? PACT.phNight)),
     otPhDay: num(role.otPhDay, p.otPhDay ?? OTINC.phDay),
     otPhNight: num(role.otPhNight, p.otPhNight ?? OTINC.phNight),
+    // framework hours are the base shape's, taken from the live card
+    fwStd: p.fwStd,
+    fwCwd: p.fwCwd,
   };
 }
 
@@ -186,12 +189,20 @@ export function roleSpactSettings(
     phNight: num(role.phNight, scaledFromDay(day, cardDay, sp.phNight ?? SP3.phNight)),
     otPhDay: num(role.otPhDay, sp.otPhDay ?? SP3_OT.phDay),
     otPhNight: num(role.otPhNight, sp.otPhNight ?? SP3_OT.phNight),
+    fwStd: sp.fwStd,
+    fwCwd: sp.fwCwd,
   };
 }
 
 /** Framework hours for a role's day — the base shape's, never the money's. */
-export function roleFrameworkHours(fw: "std" | "cwd", base: RoleBase): number {
-  return base === "spact" ? spactFrameworkHours(fw) : pactFrameworkHours(fw);
+export function roleFrameworkHours(
+  fw: "std" | "cwd",
+  base: RoleBase,
+  cards?: RoleCards
+): number {
+  return base === "spact"
+    ? spactFrameworkHours(fw, cards?.spact)
+    : pactFrameworkHours(fw, cards?.pact);
 }
 
 /**
