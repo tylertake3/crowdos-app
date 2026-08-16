@@ -18,7 +18,7 @@
     },
     "eslint": {
       "counts": {
-        "errors": 3,
+        "errors": 0,
         "warnings": 95
       },
       "command": "npm run lint",

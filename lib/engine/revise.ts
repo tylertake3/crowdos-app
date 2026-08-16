@@ -350,7 +350,7 @@ export function diffRevisions(oldM: ScheduleModel, newM: ScheduleModel): Revisio
   // mergeDetail uses for base-number matching.
   const lostKeys = [...oldIdx.keys()].filter((k) => !newIdx.has(k));
   const gainedKeys = [...newIdx.keys()].filter((k) => !oldIdx.has(k));
-  const byBase = <T>(keys: string[]) => {
+  const byBase = (keys: string[]) => {
     const m = new Map<string, string[]>();
     for (const k of keys) {
       const b = baseSceneKey(k);

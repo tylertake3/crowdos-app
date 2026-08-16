@@ -3,7 +3,7 @@
 // ports. The headline case is copied straight off the site's breakdown.
 
 import { describe, it, expect } from "vitest";
-import { danceWeek, danceDayCalc, DANCE_2026, type DanceWeek } from "../lib/engine";
+import { danceWeek, danceDayCalc, type DanceWeek } from "../lib/engine";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const week = (over: Partial<DanceWeek> = {}): DanceWeek => ({

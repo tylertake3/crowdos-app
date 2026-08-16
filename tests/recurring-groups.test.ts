@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeCrowdCosts, CROWD_DEFAULTS } from "../lib/engine/crowd";
+import { computeCrowdCosts } from "../lib/engine/crowd";
 import { prepModel } from "../lib/engine/model";
 import type { ScheduleModel, RecurringGroup, NamedCount } from "../lib/engine/types";
 
