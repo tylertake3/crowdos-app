@@ -310,7 +310,7 @@ alter table prods add column if not exists no_ai boolean not null default false;
 create table if not exists rate_cards (
   id uuid primary key default gen_random_uuid(),
   owner uuid not null references auth.users(id) on delete cascade default auth.uid(),
-  kind text not null default 'sa' check (kind in ('sa','stunts','dancers','actors')),
+  kind text not null default 'sa' check (kind in ('sa','spact','stunts','dancers','actors')),
   name text not null,
   vals jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),

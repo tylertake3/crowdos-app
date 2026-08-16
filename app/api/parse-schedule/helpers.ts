@@ -86,18 +86,30 @@ export function __resetRateLimit() { rlHits.clear(); rlLastSweep = 0; }
 
 // ── Time budget ────────────────────────────────────────────────────────────
 export const AUTH_TIMEOUT_MS = 8_000;
-export const CHUNK_TIMEOUT_MS = 90_000; // one model call may not run longer than this
+// One model call may not run longer than this. A chunk is read into structured
+// JSON, so the model's time is dominated by how much it has to EMIT — i.e. by
+// how many scenes the chunk holds. Measured on real dense one-liners, a single
+// ~350–500-line chunk (~140 scenes) takes 140–170s to read. The old 90s cap was
+// therefore SHORTER than a full chunk's read time: every chunk was aborted
+// mid-read, all of them "failed", and the whole cross-read returned a generic
+// 5xx ("the reader had a problem at our end") on exactly the schedules big
+// enough to need it. This must comfortably exceed the real read time. A chunk
+// still can never overrun the route's maxDuration: chunkTimeoutFor() below also
+// clamps every call to the wall-clock time actually left, and RESERVE_MS keeps
+// a whole chunk-timeout's worth of budget in hand. Keep this <= MAX_DURATION_S*1000
+// minus RESERVE_HEADROOM_MS so a chunk dispatched at t=0 gets the full window.
+export const CHUNK_TIMEOUT_MS = 200_000;
 // Stop DISPATCHING new chunks with this much of the route's maxDuration left, so whatever
 // has already been read can still be returned instead of dying at the wall.
 //
 // The reserve MUST be at least a whole chunk timeout plus headroom. A shorter
-// reserve cannot do its job: a chunk dispatched with, say, 44s left may still
-// run the full 90s, so the platform kills the request at maxDuration and the
-// user loses every chunk that HAD been read — precisely the failure this guard
-// exists to prevent. Headroom covers stitching, normalising and serialising
-// the reply after the last chunk lands.
+// reserve cannot do its job: a chunk dispatched near the wall may still run the
+// full CHUNK_TIMEOUT_MS, so the platform would kill the request at maxDuration
+// and the user would lose every chunk that HAD been read — precisely the
+// failure this guard exists to prevent. Headroom covers stitching, normalising
+// and serialising the reply after the last chunk lands.
 const RESERVE_HEADROOM_MS = 30_000;
-const RESERVE_MS = CHUNK_TIMEOUT_MS + RESERVE_HEADROOM_MS; // 120s
+const RESERVE_MS = CHUNK_TIMEOUT_MS + RESERVE_HEADROOM_MS;
 export const WALL_BUDGET_MS = MAX_DURATION_S * 1000 - RESERVE_MS;
 // Belt and braces: a chunk may also never be given more time than is actually
 // left before the wall, so even a mis-set reserve cannot overrun maxDuration.

@@ -61,6 +61,11 @@ export interface SpactSettings {
   phNight?: number;
   otPhDay?: number;
   otPhNight?: number;
+  // Framework hours — the length of the working day before overtime starts.
+  // SWD 10h (incl. 1h lunch) / CWD 8h on the 2026 card. Optional, defaulting
+  // to the card constants.
+  fwStd?: number;
+  fwCwd?: number;
 }
 
 export const SPACT_DEFAULTS: SpactSettings = {
@@ -76,10 +81,16 @@ export const SPACT_DEFAULTS: SpactSettings = {
   phNight: SP3.phNight,
   otPhDay: SP3_OT.phDay,
   otPhNight: SP3_OT.phNight,
+  fwStd: SP3.fwStd,
+  fwCwd: SP3.fwCwd,
 };
 
-export function spactFrameworkHours(fw: "std" | "cwd"): number {
-  return fw === "cwd" ? SP3.fwCwd : SP3.fwStd;
+export function spactFrameworkHours(
+  fw: "std" | "cwd",
+  s?: Pick<SpactSettings, "fwStd" | "fwCwd">
+): number {
+  const n = fw === "cwd" ? s?.fwCwd : s?.fwStd;
+  return typeof n === "number" && n > 0 ? n : fw === "cwd" ? SP3.fwCwd : SP3.fwStd;
 }
 
 // Per-head cost for one SPACT on a configured day.
@@ -102,7 +113,7 @@ export function spactPerHead(
   const otDayInc = c.ph ? (s.otPhDay ?? SP3_OT.phDay) : s.otDay;
   const otNightInc = c.ph ? (s.otPhNight ?? SP3_OT.phNight) : s.otNight;
 
-  const fwH = spactFrameworkHours(c.fw);
+  const fwH = spactFrameworkHours(c.fw, s);
   const { otBlocks, otDayB, otNightB } = otBlocksFor(call, wrap, fwH);
   const ot = otDayB * otDayInc + otNightB * otNightInc;
 

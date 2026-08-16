@@ -238,11 +238,16 @@ export function cdPerHead(
   s: CrowdSettings = CROWD_DEFAULTS
 ): PerHeadBreakdown {
   if (tier === "SPACT") {
-    // SPACT travel bands mirror the PACT card's editable A/B values
+    // The SPACT card prints its own travel table, so its own figures win.
+    // Only when the card is silent on a band does it fall back to the PACT
+    // card's — which is what every settings object saved before the SPACT
+    // card carried travel of its own does.
+    const spTravelA = s.spact.travelA;
+    const spTravelB = s.spact.travelB;
     return spactPerHead(c, {
       ...s.spact,
-      travelA: s.pact.travelA,
-      travelB: s.pact.travelB,
+      travelA: typeof spTravelA === "number" && spTravelA > 0 ? spTravelA : s.pact.travelA,
+      travelB: typeof spTravelB === "number" && spTravelB > 0 ? spTravelB : s.pact.travelB,
     });
   }
   return pactPerHead(c, tier, s.pact);
@@ -384,7 +389,7 @@ export function cdDayCost(
   // charged on, exactly like a supplementary fee. A stand-in on a custom role
   // is a body on the day like any other, so role heads are in this count.
   const heads = sa + featPD + spactPD + roleHeads;
-  const meals = mealPenaltyPerHead(c.meals, c.shift, s.meals);
+  const meals = mealPenaltyPerHead(c.meals, c.shift, s.meals, !!c.ph);
   const mealCost = money(meals.per, heads);
   const artistCost = sumMoney(round2(cost), mealCost);
   const uplift = computeUplift(artistCost, s.uplift);

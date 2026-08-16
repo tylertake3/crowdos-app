@@ -72,6 +72,14 @@ export interface PactSettings {
   phNight?: number; //  public-holiday night base
   otPhDay?: number; //  day OT / 30 min on a public holiday
   otPhNight?: number; // night OT & early call / 30 min on a public holiday
+  // ---- framework hours ----
+  // The length of the working day before overtime starts. Structural on the
+  // 2026 card (9h standard / 7h continuous) but printed differently on other
+  // agreements — the Equity card, for one, is a 10-hour day including lunch.
+  // Optional, defaulting to the PACT constants, so an existing saved settings
+  // object behaves exactly as it did.
+  fwStd?: number;
+  fwCwd?: number;
 }
 
 export const PACT_DEFAULTS: PactSettings = {
@@ -87,10 +95,16 @@ export const PACT_DEFAULTS: PactSettings = {
   phNight: PACT.phNight,
   otPhDay: OTINC.phDay,
   otPhNight: OTINC.phNight,
+  fwStd: PACT.stdHrs,
+  fwCwd: PACT.cwdHrs,
 };
 
-export function pactFrameworkHours(fw: "std" | "cwd"): number {
-  return fw === "cwd" ? PACT.cwdHrs : PACT.stdHrs;
+export function pactFrameworkHours(
+  fw: "std" | "cwd",
+  s?: Pick<PactSettings, "fwStd" | "fwCwd">
+): number {
+  const n = fw === "cwd" ? s?.fwCwd : s?.fwStd;
+  return typeof n === "number" && n > 0 ? n : fw === "cwd" ? PACT.cwdHrs : PACT.stdHrs;
 }
 
 export interface PerHeadBreakdown {
@@ -133,7 +147,7 @@ export function pactPerHead(
   const otDayInc = c.ph ? (s.otPhDay ?? OTINC.phDay) : s.otDay;
   const otNightInc = c.ph ? (s.otPhNight ?? OTINC.phNight) : s.otNight;
 
-  const fwH = pactFrameworkHours(c.fw);
+  const fwH = pactFrameworkHours(c.fw, s);
   const { otBlocks, otDayB, otNightB } = otBlocksFor(call, wrap, fwH);
   const ot = otDayB * otDayInc + otNightB * otNightInc;
 

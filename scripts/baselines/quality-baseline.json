@@ -11,7 +11,7 @@
   "checks": {
     "typecheck-js": {
       "counts": {
-        "errors": 417
+        "errors": 415
       },
       "command": "npm run typecheck:js",
       "recorded": "2026-08-16"
