@@ -87,7 +87,7 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.guard.outputs.configured == 'true'
 
       # The Ubuntu runner ships PostgreSQL client tools, but an older major than
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload the backup
         if: steps.guard.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: crowdos-db-backup-${{ github.run_id }}
           path: backups/*.sql.gz
