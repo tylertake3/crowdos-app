@@ -234,14 +234,19 @@ describe("diffRevisions — two days sharing a number are two different days", (
     expect(d.addedDays).toHaveLength(0);
   });
 
-  it("dayMapByUid keeps both pairings; the legacy dayMap can only hold one", () => {
+  it("dayMapByUid keeps both pairings, and the two records no longer share an id", () => {
     const o = oldM();
     const d = diffRevisions(o, newM());
     const [a, b] = o.days;
     expect(d.dayMapByUid.get(dayUid(a))!.num).toBe(5);
     expect(d.dayMapByUid.get(dayUid(b))!.num).toBe(6); // used to be lost entirely
     expect(dayUid(a)).not.toBe(dayUid(b));
-    expect(d.dayMap.size).toBe(1); // both share id "M5" — the reason uids exist
+    // Two records numbered 5 once shared the id "M5", so the legacy dayMap could
+    // only hold one of them — the reason uids exist. prepModel now suffixes the
+    // second, so both survive here too; the uid pairing above is still the one
+    // callers should use.
+    expect(a.id).not.toBe(b.id);
+    expect(d.dayMap.size).toBe(2);
   });
 
   it("each match reports the identity of the day on each side", () => {

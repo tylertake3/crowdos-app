@@ -232,6 +232,13 @@ export interface ShootDay {
   // than being dropped, which used to take a real shot day — and its spend —
   // off the production's timeline entirely.
   collided?: boolean;
+  // Set on the SECOND and later day records that share a day number — the
+  // splinter/2nd/rehearsal blocks of one shoot day, and the extra "Day 0"s.
+  // Holds the suffix that separates this record from the first ("SPL", "2ND",
+  // "MAIN2"), which both its id and its day-calculator key are built from. The
+  // first record of a number never carries it, so identities already saved
+  // against the plain key keep meaning what they meant. See prepModel.
+  block?: string;
   // ---- breakdown import ----
   // Shoot vs prep. Prep days carry fitting/test/rehearsal calls rather than
   // scenes (PDX tracks 6 prep weeks before SD1). Reserved so the model can
