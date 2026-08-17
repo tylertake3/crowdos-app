@@ -1458,8 +1458,9 @@ describe("compactRevisionDiff — money follows the day RECORD, not its number",
   it("gives each day record its own money even when two share a day number", () => {
     const s = sd();
     expect(s.days.map((d) => d.money)).toEqual([9000, 0]);
-    // both day records report id "M12"; the uid tells them apart
-    expect(s.days.map((d) => d.id)).toEqual(["M12", "M12"]);
+    // Both records are numbered 12. They used to report the same id "M12" and
+    // only the uid told them apart; prepModel now suffixes the second as well.
+    expect(s.days.map((d) => d.id)).toEqual(["M12", "M12-MAIN"]);
     expect(new Set(s.days.map((d) => d.uid)).size).toBe(2);
     const withMoney = s.groups.filter((g) => g.money);
     expect(withMoney).toHaveLength(1);

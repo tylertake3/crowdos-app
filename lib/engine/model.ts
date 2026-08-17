@@ -235,8 +235,47 @@ function resolveYears(model: ScheduleModel): void {
   });
 }
 
+// A shoot day the schedule splits across several unit blocks — MAIN plus a
+// SPLINTER, a 2ND UNIT or a REHEARSAL UNIT — arrives as one day record per
+// block, all carrying the same day number. So does every unnumbered day
+// ("Day 0": rehearsals, prep, second-bank days), which all read as number 0.
+//
+// Built from unit+number alone, all those records share ONE id — and one id
+// means one entry in the per-day cost table. The grand total counts every
+// block, but the day column can only print the surviving entry, so it prints
+// that one block's money once per block. Measured on a real production
+// (FML, 47 printed day rows over 39 ids): the day column footed to £454,049.73
+// against a true £390,220.58 — a splinter unit with no crowd at all was shown
+// charging £33,247.28, twice.
+//
+// So: THE FIRST record of a number keeps the plain id, and every later one is
+// suffixed. Keeping the first untouched is what makes this safe to ship — day
+// configs, scene edits and briefs already saved against `M6` still belong to
+// the MAIN block, exactly as they did. Only the extra blocks, which never had
+// an identity of their own, gain one.
+const UNIT_TAG: Record<string, string> = {
+  splinter: "SPL",
+  second: "2ND",
+  rehearsal: "REH",
+  weatherCover: "WX",
+  reshoot: "RS",
+  main: "MAIN",
+};
+/** The suffix that separates this record from an earlier one of the same
+ *  number: its unit kind, plus an occurrence number if that is not enough.
+ *  Derived from the document's own order, so it is stable across re-imports. */
+function blockSuffix(d: ShootDay, taken: Set<string>): string {
+  const tag = UNIT_TAG[d.unitKind || "main"] || "MAIN";
+  if (!taken.has(tag)) return tag;
+  let n = 2;
+  while (taken.has(tag + n)) n++;
+  return tag + n;
+}
+
 export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleModel {
   resolveYears(model);
+  // number → suffixes already handed out for it (empty string = the plain id)
+  const seenNums = new Map<string | number, Set<string>>();
   model.days.forEach((d, i) => {
     d.unit = unit;
     // A carried day that already has an id KEEPS it. An already-shot day whose
@@ -246,7 +285,22 @@ export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleM
     // day records sharing an id means one silently overwrites the other in the
     // per-day cost table — the day column then double-counts one day while the
     // grand total counts both.
-    if (!(d.carried && d.id)) d.id = (unit === "2nd" ? "U" : "M") + d.num;
+    if (!(d.carried && d.id)) {
+      const base = (unit === "2nd" ? "U" : "M") + d.num;
+      // A carried day already carries its own revision suffix and is tracked
+      // under it, so it plays no part in the block numbering.
+      const taken = seenNums.get(d.num) || new Set<string>();
+      if (!seenNums.has(d.num)) {
+        seenNums.set(d.num, taken);
+        d.id = base;
+        delete d.block;
+      } else {
+        const suffix = blockSuffix(d, taken);
+        taken.add(suffix);
+        d.block = suffix;
+        d.id = base + "-" + suffix;
+      }
+    }
     // the record's own identity, unique whatever the ids do
     d._uid = d.id + "@" + i;
     // Most Full Fat schedules state no day-level location — the set only

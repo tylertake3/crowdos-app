@@ -1104,9 +1104,15 @@ export function cutDayCancellations(
 }
 
 export function cdayKey(
-  d: Pick<ShootDay, "unit" | "num"> & Partial<Pick<ShootDay, "collided" | "fromRev">>
+  d: Pick<ShootDay, "unit" | "num"> & Partial<Pick<ShootDay, "collided" | "fromRev" | "block">>
 ): string {
   const base = (d.unit || "Main") + "|" + d.num;
+  // A splinter / 2nd / rehearsal block of the same shoot day is its own day's
+  // work — its own call, its own crowd, its own calculator. Sharing the main
+  // block's key meant editing one edited both, and the two were priced as one.
+  // Only the EXTRA blocks carry a suffix (see prepModel), so a config saved
+  // before this existed still belongs to the main block.
+  if (d.block) return base + "-" + d.block;
   // A collided already-shot day is stitched back in under the SAME unit and
   // number as a live day in the new schedule — that reuse is what made it a
   // collision. Without the revision suffix the two share one config key, so the
