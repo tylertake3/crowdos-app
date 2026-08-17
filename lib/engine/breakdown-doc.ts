@@ -19,7 +19,7 @@ import type {
   ShootDay,
 } from "./types";
 import { weekKey } from "./model";
-import { money, sumMoney } from "./money";
+import { money, sumMoney, round2 } from "./money";
 
 // Column set, verbatim from the reference documents. Locked.
 export const CB_COLUMNS = [
@@ -272,6 +272,15 @@ export interface CbLine {
    * scenes, so the day's cost comes from the cost engine, not from these.
    */
   cost: number;
+  /**
+   * What ONE person on this line costs a day — the per-head day rate for its
+   * role (or tier) PLUS this line's supplementary fee. This is the coefficient
+   * behind `cost` (`cost === money(rate, bookedHeads)`), surfaced so an export
+   * can write the COST cell as a live `heads × rate` formula that recalculates
+   * when the recipient edits the headcount. Zero on a carried line (it books
+   * nobody) and when no per-head resolver was supplied.
+   */
+  rate: number;
 }
 
 export interface CbScene {
@@ -528,6 +537,7 @@ function toLine(
     // carried, never inferred: the row itself says which role it is paid on
     ...(clean(r.roleId) ? { roleId: clean(r.roleId) } : {}),
     cost: 0,
+    rate: 0,
   };
 }
 
@@ -570,6 +580,7 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       slot: -1,
       sup: 0,
       cost: 0,
+      rate: 0,
     });
   }
   push(crowd, sc.saChars, "SA", false);
@@ -596,6 +607,7 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       pointer: true,
       sup: 0,
       cost: 0,
+      rate: 0,
     });
   }
   return { crowd, other };
@@ -719,13 +731,21 @@ const bookedHeads = (line: CbLine): number => (line.fromAbove ? 0 : line.no || 0
  * never a raw float multiplication.
  */
 function lineCost(dayId: string, line: CbLine, px: CbPricer): number {
+  line.rate = 0;
   if (!px.perHead) return 0;
+  // A carried line books nobody, so it has no cost and no per-person rate — the
+  // people it points at are priced on the scene that actually books them.
+  if (bookedHeads(line) === 0 && line.fromAbove) return 0;
   const rate = px.perHead(
     dayId,
     line.tier,
     line.roleId && !line.roleMissing ? line.roleId : undefined
   );
-  return money(sumMoney(rate, line.sup), bookedHeads(line));
+  // The cost-per-person is settled to the penny once here (rate + this line's
+  // fee), then paid `heads` times — the same figure an export multiplies the
+  // headcount by, so the printed cost and a re-typed headcount can never drift.
+  line.rate = sumMoney(rate, line.sup);
+  return money(line.rate, bookedHeads(line));
 }
 
 function refreshSceneFigures(row: CbScene, px: CbPricer): void {
@@ -1205,8 +1225,24 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   const OTHER_COL = otherIdx >= 0 ? cbColLetter(otherIdx) : "";
   const FEES_COL = feesIdx >= 0 ? cbColLetter(feesIdx) : "";
   const COST_COL = costIdx >= 0 ? cbColLetter(costIdx) : "";
+  // The PURE numeric headcount column (never the merged "20 GUARDS" text one) —
+  // this is the cell a per-line FEES/COST formula multiplies, so a recipient
+  // who edits a headcount sees the money recalculate. Empty when the layout
+  // merges count and name, where the figure has to stay a literal.
+  const lineNoIdx = roleIndex(layout, "crowdNo");
+  const LINE_NO_COL = lineNoIdx >= 0 ? cbColLetter(lineNoIdx) : "";
   const sumOf = (rowNums: number[], col: string): string =>
     rowNums.map((n) => `${col}${n}`).join("+");
+  // A per-line money cell as a LIVE formula: headcount × cost-per-person, so
+  // "48 × £148.52" recalculates the instant the recipient retypes the 48. The
+  // per-person figure is the same one the engine settled `result` from, so the
+  // printed number is exact and only moves when the count does. Falls back to
+  // the literal where there is no numeric count cell to point at (merged
+  // layout) or nothing to charge.
+  const perPersonCell = (rowNum: number, per: number, result: number): CbCell => {
+    if (!LINE_NO_COL || per <= 0 || !result) return result || null;
+    return { formula: `${LINE_NO_COL}${rowNum}*${round2(per)}`, result };
+  };
   // A day's people: add its scene lines, less the carried ones. Needs both a
   // numeric count column and the name column that labels it — when the count
   // and the name are merged into one column the entries are text ("20
@@ -1254,6 +1290,9 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
         const o = sc.other[i];
         const blank = i === 0 && !sc.crowd.length;
         const heads = c && !c.fromAbove ? c.no || 0 : 0;
+        // the row this line lands on, so its FEES/COST formula can point back at
+        // its own headcount cell
+        const rowNum = rows.length + 1;
         add({
           kind: "scene",
           fromAbove: !!(c && c.fromAbove),
@@ -1269,8 +1308,10 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
               case "crowdNotes": return c ? c.notes || null : null;
               case "otherNo": return o ? (o.no ?? null) : null;
               case "otherName": return o ? o.name : null;
-              case "fees": return c && c.sup ? heads * c.sup : null;
-              case "cost": return c && c.cost ? c.cost : null;
+              // FEES and COST are live: headcount × fee-per-head and headcount ×
+              // cost-per-person, so retyping the NO. recalculates the money.
+              case "fees": return c && c.sup ? perPersonCell(rowNum, c.sup, heads * c.sup) : null;
+              case "cost": return c && c.cost ? perPersonCell(rowNum, c.rate, c.cost) : null;
               default: return null;
             }
           }),
