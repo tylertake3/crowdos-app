@@ -675,6 +675,42 @@ describe("crowd breakdown document", () => {
       expect((weekTotal.cells[8] as { formula: string }).formula).toMatch(/^I\d+$/);
     });
 
+    it("makes every crowd line's COST a live headcount × cost-per-person formula", () => {
+      const sh = cbToStyledSheet(withCosts());
+      // NO. is column D (index 3), COST is column I (index 8)
+      const nurses = sh.rows.filter(
+        (r) => r.kind === "scene" && r.cells[4] === "Nurses" && !r.fromAbove
+      );
+      // the booking line for the nurses: 10 people at £130 + £23 fee = £153/head
+      const booked = nurses.find((r) => typeof r.cells[3] === "number" && r.cells[3]);
+      const rowNum = sh.rows.indexOf(booked!) + 1;
+      expect(booked!.cells[8]).toEqual({ formula: `D${rowNum}*153`, result: 1530 });
+      // the SPACT barman: 2 people at £300/head, no fee
+      const barman = sh.rows.find((r) => r.kind === "scene" && r.cells[4] === "Barman")!;
+      const barmanRow = sh.rows.indexOf(barman) + 1;
+      expect(barman.cells[8]).toEqual({ formula: `D${barmanRow}*300`, result: 600 });
+      // a carried line books nobody, so it stays empty — never a formula
+      const carried = nurses.find((r) => r.fromAbove);
+      if (carried) expect(carried.cells[8]).toBeNull();
+    });
+
+    it("keeps a merged NO./NAME column costed as a literal (text can't be multiplied)", () => {
+      const sh = cbToStyledSheet(projectCrowdDoc(model([feeDay()]), {
+        costs: true,
+        mergeCrowd: true,
+        perHead: (_id, tier) => (tier === "SPACT" ? 300 : 130),
+        dayCost: () => 2_000,
+      }));
+      const costIdx = sh.columns.indexOf("COST");
+      // merged layout has no numeric cell to point at, so every priced line
+      // keeps the figure the app worked out — a literal, never a formula
+      const priced = sh.rows.filter(
+        (r) => r.kind === "scene" && r.cells[costIdx] != null
+      );
+      expect(priced.length).toBeGreaterThan(0);
+      expect(priced.every((r) => typeof r.cells[costIdx] === "number")).toBe(true);
+    });
+
     it("keeps the money column last when stunts/other is off", () => {
       const sh = cbToStyledSheet(
         projectCrowdDoc(model([feeDay()]), {
