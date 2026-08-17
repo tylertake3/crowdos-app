@@ -31,9 +31,25 @@ export interface MergeResult {
 }
 
 // "10 pt 1" / "10pt1" / "10 PT.1" → "10pt1"
+// The two documents split the part differently: a schedule parser fills
+// `part` as its own field ({num:"87", part:"5/7"}) while a breakdown writes
+// it inside the number ({num:"87pt5/7"}). Joining num+part with nothing
+// between them made those "875/7" and "87pt5/7" — keys that can never meet.
+// On a schedule where half the scenes are parts (55pt15/29, 87pt5/7) that
+// silently dropped the crowd for half the shoot, so the separator is
+// reinstated whenever neither side already carries one.
 export function sceneKey(sc: Pick<Scene, "num" | "part">): string {
-  return ((sc.num || "") + (sc.part || "")).toLowerCase().replace(/[\s.]+/g, "");
+  const num = String(sc.num || "");
+  const part = String(sc.part || "");
+  const joined =
+    part && !/(pt|part)\s*\.?\s*$/i.test(num) && !/^\s*(pt|part)/i.test(part)
+      ? num + "pt" + part
+      : num + part;
+  return joined.toLowerCase().replace(/[\s.]+/g, "").replace(/part/g, "pt");
 }
+
+// "87pt5/7" → "87". Parts are written "pt2", "pt5/7", "pt2a" or a bare "pt".
+const PART_SUFFIX_RX = /pt[\d/]*[a-z]?$/;
 
 const heads = (g: NamedCount[] | undefined) =>
   (g || []).reduce((a, x) => a + (x.count || 0), 0);
@@ -87,7 +103,7 @@ export function mergeDetail(spine: ScheduleModel, detail: ScheduleModel): MergeR
     byKey.set(k, prev ? combineScenes(prev, sc) : sc);
   }
   for (const [k, sc] of byKey) {
-    const base = k.replace(/pt\d+[a-z]?$/, "");
+    const base = k.replace(PART_SUFFIX_RX, "");
     if (base !== k) {
       const arr = byBase.get(base) || [];
       arr.push(sc);
@@ -115,7 +131,7 @@ export function mergeDetail(spine: ScheduleModel, detail: ScheduleModel): MergeR
       }
       if (!det) {
         // spine "10 pt 1" may need detail "10" (a Full Fat that didn't split parts)
-        const base = k.replace(/pt\d+[a-z]?$/, "");
+        const base = k.replace(PART_SUFFIX_RX, "");
         if (base !== k) det = byKey.get(base);
       }
       if (!det) {

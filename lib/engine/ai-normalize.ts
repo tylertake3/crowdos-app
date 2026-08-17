@@ -2,6 +2,8 @@
 // the engine can cost. Kept in lib/ (not the route file) so it is unit-testable
 // and Next.js does not treat it as a route export.
 
+import { parseDayDate } from "./model";
+
 // Classify a raw AI background[] + stunts[] into the engine's named buckets,
 // applying the deterministic guards (junk labels out, stunt-named crowd → stunts,
 // crowd-named "double/stand-in" filed under stunts → back to SA). Used for both
@@ -136,8 +138,23 @@ export function normalize(raw: any) {
       scenes,
       pages: "",
     };
-  }).filter((d: any) => d.scenes.length || d.num)
-    .map((d: any, i: number) => ({ ...d, num: i + 1 })); // sequential across merged chunks
+  }).filter((d: any) => d.scenes.length || d.num);
+
+  // Put the days back in CALENDAR order before renumbering.
+  //
+  // The renumber below is unconditional — the model's own day numbers are
+  // discarded because each chunk restarts its numbering at 1. That is only
+  // safe if the array is already in shoot order, and it is not guaranteed to
+  // be: a long schedule is read in several chunks, a day can be reported out
+  // of order within a chunk, and merged days re-join at the position of the
+  // FIRST fragment. A real 38-day schedule came back with its dates scrambled
+  // and "Day 1" landing on whatever happened to be first.
+  //
+  // Only dated days move, and only into the slots dated days already occupy,
+  // so a schedule whose dates the parser can't read is left exactly as the
+  // model reported it rather than being shuffled on a guess.
+  sortDatedDays(days);
+  for (let i = 0; i < days.length; i++) days[i] = { ...days[i], num: i + 1 };
 
   const castMap: Record<string, string> = {};
   for (const m of Array.isArray(raw?.castMap) ? raw.castMap : []) {
@@ -147,4 +164,21 @@ export function normalize(raw: any) {
   }
 
   return { days, castMap, notes: [] as any[] };
+}
+
+// Stable calendar sort over the days that HAVE a readable date, in place.
+// Undated days keep their index; dated days are sorted among the indices they
+// already hold. Ties (two records for one date — a split unit) keep their
+// original relative order.
+export function sortDatedDays(days: { date: string }[]): void {
+  const slots: number[] = [];
+  const dated: { d: any; t: number; i: number }[] = [];
+  days.forEach((d, i) => {
+    const t = parseDayDate(d)?.getTime();
+    if (t == null || Number.isNaN(t)) return;
+    slots.push(i);
+    dated.push({ d, t, i });
+  });
+  dated.sort((a, b) => a.t - b.t || a.i - b.i);
+  slots.forEach((slot, k) => { days[slot] = dated[k].d; });
 }
