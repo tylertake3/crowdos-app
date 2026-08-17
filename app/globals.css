@@ -33,7 +33,11 @@
   --ink:#eceff3; --sub:#8b95a3;
   --faint:#7c8694;                       /* was #5c6673 (3.05:1) → 4.86:1 on --panel */
   --muted:#8b95a3;                       /* real muted TEXT — never a border colour  */
-  --hv:#4d9dff; --hv2:#7cbcff; --hv-dim:rgba(77,157,255,.14); --hv-line:rgba(77,157,255,.42);
+  /* Stunts are ORANGE and crowd is BLUE — they are two different things and must
+     never read as the same colour. --hv (the stunt/highlight accent) therefore
+     defaults to the app's orange, not a blue that collides with --crowd below.
+     A production's own brand colour still overrides --hv at runtime. */
+  --hv:#ff6b2c; --hv2:#ff8a3d; --hv-dim:rgba(255,107,44,.14); --hv-line:rgba(255,107,44,.42);
   --hvink:#000;
   --crowd:#5b8def; --crowd-dim:rgba(91,141,239,.15);
   --money:#ffd666; --note:#e8c268; --notebg:rgba(232,194,104,.08);
@@ -74,7 +78,9 @@ body.light{
   --ink:#17181a; --sub:#6f7278;
   --faint:#6e7278;                       /* was #a5a8ad (2.39:1) → 4.91:1 on white */
   --muted:#6f7278;
-  --hv:#2563eb; --hv2:#4f82f7; --hv-dim:rgba(37,99,235,.07); --hv-line:rgba(37,99,235,.35);
+  /* Light-theme stunt orange: #c2410c is ~5.1:1 on white, so stunt labels and
+     chips clear AA while staying unmistakably orange next to the blue crowd. */
+  --hv:#c2410c; --hv2:#ea580c; --hv-dim:rgba(194,65,12,.08); --hv-line:rgba(194,65,12,.35);
   --hvink:#fff;
   --crowd:#2563eb; --crowd-dim:rgba(37,99,235,.07);
   --money:#17181a; --note:#8a6a1f; --notebg:rgba(154,107,0,.06);
@@ -1597,6 +1603,12 @@ body.pdf-docked .dh-top button,body.pdf-docked .dh-top a,body.pdf-docked .dh-top
 .imp-warn p:first-of-type{margin-top:0}
 .imp-warn-soft{background:var(--notebg);border-color:var(--warn-line);color:var(--note)}
 .imp-warn-soft .imp-warn-hd{color:var(--note)}
+/* A reader reporting GOOD news in the same panel. The crowd-breakdown importer
+   checks every day total in the document against its own rows, so its usual
+   result is "this all adds up" — which has to look like a pass, not a warning,
+   or the panel says the opposite of its own text. */
+.imp-warn-ok{background:var(--good-bg);border-color:var(--good-line);color:var(--good)}
+.imp-warn-ok .imp-warn-hd{color:var(--good)}
 /* inline SVG icons — 1em squares that ride along with the text they sit in */
 .ic{width:1em;height:1em;display:inline-block;vertical-align:-0.14em;flex-shrink:0}
 .briefrow{cursor:pointer}

@@ -254,9 +254,24 @@ describe("rate limiting", () => {
 });
 
 describe("time budget", () => {
-  it("reserves at least one whole chunk timeout before the wall", () => {
-    const reserve = MAX_DURATION_S * 1000 - WALL_BUDGET_MS;
-    expect(reserve).toBeGreaterThan(CHUNK_TIMEOUT_MS);
+  // REGRESSION. The reserve used to be a whole 200s chunk timeout plus 30s of
+  // headroom, which stopped dispatch 70s into a 300s route. A real chunk takes
+  // 60–170s, so the first two chunks were still in flight at 70s and the THIRD
+  // was never dispatched: every schedule that split into more than two pieces
+  // lost everything after the second one. Dispatch must stay open long enough to
+  // start a chunk after two sequential reads have finished.
+  it("keeps dispatching past the first two chunk reads", () => {
+    const twoSlowReads = 2 * 60_000; // two 60s chunk reads, back to back
+    expect(WALL_BUDGET_MS).toBeGreaterThan(twoSlowReads);
+  });
+
+  // A chunk started at the very end of the dispatch window is cut short by
+  // chunkTimeoutFor rather than allowed to overrun the wall — so the reserve
+  // only has to cover the shortest read worth starting, plus stitching headroom.
+  it("never lets a chunk dispatched at the budget edge outrun maxDuration", () => {
+    const left = chunkTimeoutFor(WALL_BUDGET_MS);
+    expect(WALL_BUDGET_MS + left).toBeLessThanOrEqual(MAX_DURATION_S * 1000);
+    expect(left).toBeGreaterThanOrEqual(30_000); // still long enough to be worth starting
   });
 
   it("caps a chunk's timeout by the time actually left", () => {
