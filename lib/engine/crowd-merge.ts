@@ -118,6 +118,7 @@ function combineBreakdownScenes(a: Scene, b: Scene): Scene {
   out.reqStatus = a.reqStatus || b.reqStatus;
   out.contFrom = a.contFrom || b.contFrom;
   out.contFromRef = a.contFromRef || b.contFromRef;
+  if (a.crowdInherited || b.crowdInherited) out.crowdInherited = true;
   out.unparsed = [...(a.unparsed || []), ...(b.unparsed || [])];
   return out;
 }
@@ -203,6 +204,9 @@ function applyCrowd(spineSc: Scene, bdSc: Scene): Scene {
   if (bdSc.reqStatus) merged.reqStatus = bdSc.reqStatus;
   if (bdSc.contFrom) merged.contFrom = bdSc.contFrom;
   if (bdSc.contFromRef) merged.contFromRef = bdSc.contFromRef;
+  // The rows just written are the covering scene's people, marked as carried.
+  // Say so, so nothing downstream mistakes them for this scene's own booking.
+  if (bdSc.crowdInherited) merged.crowdInherited = true;
   if ((bdSc.unparsed || []).length) merged.unparsed = bdSc.unparsed;
   // This scene's crowd is now the crowd side's, not the schedule's.
   merged.crowdSource = "breakdown_import";

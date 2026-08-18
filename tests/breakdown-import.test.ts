@@ -29,9 +29,12 @@ import {
   parseReqCell,
   parseSceneHead,
   parseTotals,
+  materialiseCarriedCrowd,
   readColourLegend,
   stitchOverflow,
 } from "../lib/engine/breakdown-parse";
+import { cbSceneLines } from "../lib/engine/breakdown-doc";
+import type { Scene, ShootDay } from "../lib/engine/types";
 
 // ── Fixture ────────────────────────────────────────────────────────────────
 
@@ -407,6 +410,68 @@ describe("scene rows", () => {
     expect(d.scenes.map((s) => s.num)).toEqual(["23", "24", "25"]);
     expect(dayHeads(d, ["SA"])).toBe(60); // not 180
     expect(d.scenes[1].contFrom).toBe("23");
+    // ...but a covering scene is not an EMPTY scene. Each one shows the same 60
+    // guests, every row marked as carried so the day still books 60 once.
+    for (const sc of d.scenes.slice(1)) {
+      expect(sc.crowdInherited).toBe(true);
+      expect(sc.saChars).toEqual([
+        expect.objectContaining({ name: "Wedding Guests (BBQ)", count: 60, cont: "23", flags: ["asAbove"] }),
+      ]);
+    }
+  });
+});
+
+describe("a scene that says “as above” instead of listing its crowd", () => {
+  const mk = (scenes: Partial<Scene>[]): ShootDay =>
+    ({ id: "d1", num: "1", date: "Mon 7 Sep 2026", scenes: scenes as Scene[] }) as unknown as ShootDay;
+
+  it("fills it in from the scene it points at, as the same people", () => {
+    const d = mk([
+      { num: "23", sa: 0, saChars: [{ name: "Wedding Guests", count: 60 }], featured: [{ name: "Photographers", count: 2 }] },
+      { num: "24", sa: 0, contFrom: "23", contFromRef: "covered with Sc.23" },
+    ]);
+    expect(materialiseCarriedCrowd([d])).toBe(1);
+    expect(d.scenes[1].saChars![0]).toMatchObject({ name: "Wedding Guests", count: 60, flags: ["asAbove"] });
+    expect(d.scenes[1].featured![0]).toMatchObject({ name: "Photographers", count: 2, flags: ["asAbove"] });
+    // carried rows are nobody new — the day's figure is unchanged
+    expect(dayHeads(d, ["SA", "Featured"])).toBe(62);
+  });
+
+  it("follows a bare “as above” to the scene above it", () => {
+    const d = mk([
+      { num: "9", sa: 0, saChars: [{ name: "Commuters", count: 12 }] },
+      { num: "10", sa: 0, contFromRef: "As above (12)" },
+    ]);
+    expect(materialiseCarriedCrowd([d])).toBe(1);
+    expect(d.scenes[1].saChars![0]).toMatchObject({ name: "Commuters", count: 12 });
+  });
+
+  it("leaves a pointer alone when its scene is not on this day", () => {
+    const d = mk([{ num: "76", sa: 0, contFrom: "1", contFromRef: "(FROM ABOVE)" }]);
+    expect(materialiseCarriedCrowd([d])).toBe(0);
+    expect(d.scenes[0].saChars || []).toEqual([]);
+  });
+
+  it("never overwrites a scene that states crowd of its own", () => {
+    const d = mk([
+      { num: "23", sa: 0, saChars: [{ name: "Wedding Guests", count: 60 }] },
+      { num: "24", sa: 0, contFrom: "23", saChars: [{ name: "Mechanic", count: 1 }] },
+    ]);
+    expect(materialiseCarriedCrowd([d])).toBe(0);
+    expect(d.scenes[1].saChars).toEqual([{ name: "Mechanic", count: 1 }]);
+  });
+
+  it("keeps the AD’s shorthand on the printed page, then gives it up for a new group", () => {
+    const carried: Scene = {
+      num: "24", contFrom: "23", sa: 0,
+      saChars: [{ name: "Wedding Guests", count: 60, flags: ["asAbove"] }],
+    } as Scene;
+    expect(cbSceneLines(carried).crowd.map((l) => l.name)).toEqual(["AS SCENE 23 (FROM ABOVE)"]);
+    const mixed: Scene = {
+      ...carried,
+      saChars: [...carried.saChars!, { name: "Mechanic", count: 1 }],
+    } as Scene;
+    expect(cbSceneLines(mixed).crowd.map((l) => l.name)).toEqual(["Wedding Guests", "Mechanic"]);
   });
 });
 

@@ -66,6 +66,12 @@ depends on data persisting between sessions.
 | C7 | Upload the same schedule twice as two revisions of one unit. | Newest becomes current; older shown as superseded, contributing nothing to totals. |
 | C8 | Upload two different productions whose PDF files have the **same filename**. | **LIKELY FAILS:** they may share day-calculator settings and scene edits. High priority to check. |
 | C9 | Where the schedule has notation the reader didn't understand, check the field. | Left blank, not guessed. |
+| C10 | Import a crowd breakdown that covers several scenes with one set-up ("Sc.23, 24, 25") or writes "as above". On the day board, look at the covering scenes. | Each shows the same crowd as the scene it points at, every chip labelled **(FROM ABOVE)**. The day's crowd figure must be **unchanged** — the same people, counted once. |
+| C11 | Same import → Crowd breakdown document. | The covering scenes still read **AS SCENE 23 (FROM ABOVE)** rather than reprinting the list. Type one new group into scene 24 and the full list should come back. |
+| C12 | Crowd mode, day board: ⌘/Ctrl-click three crowd chips, then Shift-click a fourth. | A bar appears at the bottom: "4 groups selected", with the head count and how many scenes. Chips are ringed. |
+| C13 | With several selected, use **Copy to scene…** → pick a scene → answer "Same people". | All of them land on that scene. The day total does **not** rise. One Undo puts it back. |
+| C14 | With several selected, press **⌘C**, hover another scene's crowd cell and press **⌘V** (try a scene on a different day too). | All the copied groups appear on that scene. Right-clicking the scene should also offer "Paste N crowd groups here". |
+| C15 | With several selected, press **Delete**, then Undo. | All go at once; Undo restores all of them in one step. |
 
 ---
 

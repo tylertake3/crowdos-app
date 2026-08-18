@@ -571,8 +571,25 @@ function push(
 export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
   const crowd: CbLine[] = [];
   const other: CbLine[] = [];
+  // A scene whose rows were BORROWED from the scene it points at (see
+  // materialiseCarriedCrowd) prints the pointer the AD wrote, not the list
+  // again: this page is read against their own paperwork, and reprinting five
+  // groups under every covering scene turns one legible block into three.
+  // The rows are still on the scene for every view that reads a scene alone.
+  //
+  // Derived, never trusted from a flag: a scene is printing a pointer only while
+  // EVERY row on it is carried. Type one genuinely new group into a covering
+  // scene and the list comes back, because the shorthand would then be a lie.
+  const rows = [...(sc.saChars || []), ...(sc.featured || []), ...(sc.spacts || [])].filter(
+    (r) => clean(r.name) || (+r.count || 0),
+  );
+  const borrowed =
+    !!(sc.contFrom || sc.contFromRef) &&
+    rows.length > 0 &&
+    rows.every(isFromAbove) &&
+    (!(sc.sa > 0) || !!sc.saAbove);
   // anonymous background carries no name in the source — still a real line
-  if (sc.sa > 0) {
+  if (sc.sa > 0 && !borrowed) {
     crowd.push({
       no: sc.sa,
       name: "SA's",
@@ -596,9 +613,11 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
       rate: 0,
     });
   }
-  push(crowd, sc.saChars, "SA", false);
-  push(crowd, sc.featured, "Featured", false);
-  push(crowd, sc.spacts, "SPACT", false);
+  if (!borrowed) {
+    push(crowd, sc.saChars, "SA", false);
+    push(crowd, sc.featured, "Featured", false);
+    push(crowd, sc.spacts, "SPACT", false);
+  }
   push(other, sc.extras, "Stunt", true, "extras");
   push(other, sc.children, "Child", true, "children");
   push(other, sc.avs, "AV", true, "avs");
