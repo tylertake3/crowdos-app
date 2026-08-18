@@ -44,6 +44,7 @@ import {
   MEAL_PENALTY_DEFAULTS,
   UPLIFT_DEFAULTS,
   type CancellationSettings,
+  type DayMeals,
   type DayUplift,
   type MealPenaltyCost,
   type MealPenaltySettings,
@@ -74,6 +75,15 @@ export interface CrowdSettings {
   // SA framework, so SPACT (longer framework) correctly accrues less OT for
   // the same unit day. Absent = the old flat-rate default, unchanged.
   baseDay?: { fw: "std" | "cwd"; otHours: number };
+  /**
+   * Meal penalties to ASSUME on every unedited day ("assume everyone gets a
+   * short lunch"). Applied per head on the un-edited branches only — an edited
+   * day carries its own `meals` — and priced at the day rate (unedited days are
+   * always a Day shift), with public-holiday rates when the day is auto-flagged.
+   * Independent of `baseDay`: it applies whether the hours assumption is a
+   * framework day or the flat day rate. Absent / all-false = nothing, unchanged.
+   */
+  baseMeals?: DayMeals;
   /**
    * Band charged for a location the gazetteer doesn't recognise. Defaults to
    * B — the safer, higher band, so an unlisted location can only make the
@@ -816,14 +826,17 @@ export function computeCrowdCosts(
         rolePerHead(cfg, role, s).per
       );
       const roleCost = sumMoney(...Object.values(roles).map((t) => t.cost));
-      // An unedited day has no meal penalties (nobody has said it ran one),
-      // but it does carry the production's uplift stack.
-      const artistCost = sumMoney(saCost, featCost, spactCost, roleCost);
+      // An unedited day runs no meals of its own, but the production can ASSUME
+      // meal penalties across the schedule (s.baseMeals) — priced per head at the
+      // day rate, inside the base the uplift stack is charged on.
+      const meals = mealPenaltyPerHead(s.baseMeals, "Day", s.meals, phInfo.applied);
+      const mealCost = money(meals.per, heads);
+      const artistCost = sumMoney(saCost, featCost, spactCost, roleCost, mealCost);
       const uplift = computeUplift(artistCost, s.uplift);
       entry = {
         sa, feats, spacts, featPD, spactPD,
         cost: uplift.grand,
-        artistCost, mealCost: 0, meals: { per: 0, lines: [] }, uplift,
+        artistCost, mealCost, meals, uplift,
         saCost, featCost, spactCost,
         supCost: supTotal, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
         roleHeads: rolePD, roleCost, supRole: roleSupTotal, roles,
@@ -873,14 +886,18 @@ export function computeCrowdCosts(
         tAmt
       );
       const roleCost = sumMoney(...Object.values(roles).map((t) => t.cost));
+      // Even a flat-rate unedited day carries any production-wide assumed meal
+      // penalties (s.baseMeals), per head at the day rate.
+      const meals = mealPenaltyPerHead(s.baseMeals, "Day", s.meals, phInfo.applied);
+      const mealCost = money(meals.per, heads);
       const artistCost = sumMoney(
-        saCost, featCost, spactCost, roleCost, money(tAmt, heads)
+        saCost, featCost, spactCost, roleCost, money(tAmt, heads), mealCost
       );
       const uplift = computeUplift(artistCost, s.uplift);
       entry = {
         sa, feats, spacts, featPD, spactPD,
         cost: uplift.grand,
-        artistCost, mealCost: 0, meals: { per: 0, lines: [] }, uplift,
+        artistCost, mealCost, meals, uplift,
         saCost, featCost, spactCost,
         supCost: supTotal, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
         roleHeads: rolePD, roleCost, supRole: roleSupTotal, roles,
