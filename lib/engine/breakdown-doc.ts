@@ -378,6 +378,19 @@ export interface CbOpts {
   scheduleDate?: string;
   /** drop scenes with no crowd and no requirement lines at all */
   hideEmpty?: boolean;
+  /**
+   * Which scenes belong in this document. Used to issue the breakdown per
+   * UNIT — a main unit breakdown, a 2nd unit breakdown, and the combined one
+   * the crowd department sends out (no filter).
+   *
+   * Filtering happens here rather than on the model because the projection
+   * addresses each scene by its ORIGINAL index on its day (CbScene.sceneIdx),
+   * which is what the in-grid editor writes back through. Handing this a
+   * pre-filtered model would renumber those and start writing edits onto the
+   * wrong scenes. Day totals pool only the scenes that pass, so a per-unit
+   * document totals that unit's crowd and nobody else's.
+   */
+  sceneFilter?: (sc: Scene) => boolean;
   /** include the STUNTS/OTHER columns (stunts, children, action vehicles) */
   includeOther?: boolean;
   /** show the NOTES/CONTINUITY column (default true) */
@@ -637,52 +650,119 @@ export function cbSceneLines(sc: Scene): { crowd: CbLine[]; other: CbLine[] } {
  * the wording without changing this and days silently start double-counting.
  */
 export const CB_CARRIED_MARK = "(FROM ";
+/** Suffix on the line that books the EXTRA heads a later scene needs on top of
+ *  the people already on the floor ("WEDDING GUESTS + 5 MORE"). An ordinary
+ *  booking — it is costed and it counts towards the day total — so it must
+ *  never contain CB_CARRIED_MARK, or the total would skip it. */
+export const CB_EXTRA_MARK = " (ADDITIONAL)";
 
+/**
+ * WHO A DAY ACTUALLY BOOKS, RESOLVED IN READING ORDER.
+ *
+ * The rule used to be "the biggest call in the day is the booking, everything
+ * else points at it". That got the day's total right and read wrong: on a day
+ * running 40, 32, 32, 45, the FIRST line on the page said "40 SA'S (FROM SC 5)"
+ * — pointing forward at a scene four rows below it. An AD reading down the page
+ * meets the pointer before the thing it points at, and "(FROM SC 5)" on the top
+ * line is not a sentence anyone can act on.
+ *
+ * A crowd call is built the way the day is shot: the first scene that needs a
+ * group calls them, and every later scene either uses the people already there
+ * or calls MORE. So the booking is a RUNNING PEAK in scene order:
+ *
+ *    sc 6   40  →  books 40                       (the first call)
+ *    sc 17  32  →  32 (FROM ABOVE)                (a subset of the 40)
+ *    sc 44  32  →  32 (FROM ABOVE)
+ *    sc 5   45  →  40 (FROM ABOVE) + 5 additional (5 more heads, called here)
+ *                                            day total 40 + 5 = 45
+ *
+ * The day total is unchanged — it is still the peak — but every line now reads
+ * forwards, and the extra heads are booked in the scene that first needs them,
+ * which is the scene whose call time they turn up for. "(FROM SC n)" and
+ * "(FROM BELOW)" cannot arise any more: nothing ever points forward.
+ *
+ * The increment is a SEPARATE line rather than a re-labelled one, so the
+ * exported day total needs no new arithmetic: carried lines are still exactly
+ * the ones marked "(FROM …)", and the additional line is an ordinary booking.
+ */
 function markDayBookings(scenes: { num: string; lines: CbLine[] }[]): void {
-  // Pass 1 — the biggest call for each identity anywhere in the day. A line the
-  // source explicitly marks "as above" can never be the booking: it is a
-  // pointer at other people by definition.
-  const best = new Map<string, { count: number; line: CbLine; at: number; num: string }>();
-  scenes.forEach((sc, at) => {
-    for (const line of sc.lines) {
-      if (line.explicitFromAbove || line.pointer) continue;
-      const count = line.no || 0;
-      if (count <= 0) continue;
-      const cur = best.get(line.key);
-      if (!cur || count > cur.count) best.set(line.key, { count, line, at, num: sc.num });
-    }
-  });
+  // identity → the most heads called for it so far, and the line that booked
+  // the last increase (fees travel to whichever line holds the booking).
+  const peak = new Map<string, { count: number; line: CbLine }>();
 
-  // Pass 2 — everything else of that identity is the same people.
-  scenes.forEach((sc, at) => {
+  for (const sc of scenes) {
+    // Lines added while walking this scene (the "+ N additional" lines). Held
+    // aside so the loop below is not iterating an array it is appending to.
+    const extra: CbLine[] = [];
     for (const line of sc.lines) {
       if (line.pointer) continue; // already says what it points at
-      const booking = best.get(line.key);
-      if (booking && booking.line === line) continue; // this line IS the booking
       const count = line.no || 0;
-      if (!line.fromAbove && count <= 0) continue; // an empty line carries nothing
-      line.fromAbove = true;
-      line.cost = 0;
-      // the line KEEPS line.no — what this scene needs is not the same thing as
-      // who the day is booking, and the page has to show both
-      // A fee belongs to the GROUP (a wig, a costume, a uniform), so it has to
-      // travel to whichever line books them, or it disappears from the day
-      // the moment the booking sits in another scene.
-      if (booking && line.sup > booking.line.sup) booking.line.sup = line.sup;
-      // Where the people on this line are actually booked. Every carried label
-      // is written "(FROM …)" without exception — that exact opening is what
-      // the exported day total looks for, so a label that drifted out of this
-      // shape would quietly start double-counting.
-      const where = !booking || booking.at < at
-        ? "FROM ABOVE"
-        : booking.num
-          ? `FROM SC ${clean(booking.num).toUpperCase()}`
-          : "FROM BELOW";
-      const base = line.name.replace(/\s*\((?:\d+\s+)?from (?:above|below|sc[^)]*)\)\s*$/i, "");
-      line.name = `${base} ${CB_CARRIED_MARK}${where.replace(/^FROM /, "")})`;
+      const cur = peak.get(line.key);
+
+      // First time this group is called on the day: this line books them,
+      // unless the source explicitly says they are somebody else's people.
+      if (!cur) {
+        if (line.explicitFromAbove) {
+          // "(FROM ABOVE)" with nothing above it — the source's own pointer is
+          // kept and it books nothing, rather than inventing a booking here.
+          if (count > 0 || line.fromAbove) carry(line, 0);
+          continue;
+        }
+        if (count > 0) peak.set(line.key, { count, line });
+        continue;
+      }
+
+      if (count <= 0 && !line.fromAbove) continue; // an empty line carries nothing
+
+      if (count <= cur.count) {
+        // Everyone this scene needs is already on the floor.
+        carry(line, count);
+        continue;
+      }
+
+      // This scene needs MORE than the day has called so far. The people
+      // already there are carried; the difference is booked here, because this
+      // is the scene they are actually called for.
+      const added = count - cur.count;
+      carry(line, cur.count);
+      const bump: CbLine = { ...line, no: added, fromAbove: false, sup: line.sup };
+      bump.name = `${baseName(line.name)}${CB_EXTRA_MARK}`;
+      // The fee belongs to the GROUP, and it is charged on the heads this line
+      // books — the carried half is already paid for on the line above.
+      bump.cost = 0; // repriced by the caller's pricer pass; never guessed here
+      extra.push(bump);
+      peak.set(line.key, { count, line: bump });
     }
-  });
+    if (extra.length) sc.lines.push(...extra);
+  }
+
+  // A supplementary fee (a wig, a uniform, a shave) belongs to the GROUP, not
+  // to whichever row happened to write it down — the source states it once and
+  // usually on the group's first appearance. Every line that books heads of
+  // that group has to carry it, or the fee is lost the moment the heads are
+  // booked somewhere other than the row the fee was typed on.
+  const fee = new Map<string, number>();
+  for (const sc of scenes)
+    for (const l of sc.lines) fee.set(l.key, Math.max(fee.get(l.key) || 0, l.sup || 0));
+  for (const sc of scenes)
+    for (const l of sc.lines) if (!l.fromAbove && !l.pointer) l.sup = fee.get(l.key) || 0;
+
+  function baseName(n: string): string {
+    return n
+      .replace(/\s*\((?:\d+\s+)?from (?:above|below|sc[^)]*)\)\s*$/i, "")
+      .replace(new RegExp(escapeRx(CB_EXTRA_MARK) + "$"), "");
+  }
+  // Mark a line as the same people already on the floor. It KEEPS its own
+  // number — what this scene needs is not the same thing as who the day is
+  // booking, and the page has to show both — but it costs nothing.
+  function carry(line: CbLine, alreadyThere: number): void {
+    line.fromAbove = true;
+    line.cost = 0;
+    if (alreadyThere > 0 && alreadyThere < (line.no || 0)) line.no = alreadyThere;
+    line.name = `${baseName(line.name)} ${CB_CARRIED_MARK}ABOVE)`;
+  }
 }
+const escapeRx = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * What the projection needs to price a line and to name its role. One object
@@ -781,12 +861,21 @@ export function poolDayHeads(scenes: { crowd: CbLine[]; other: CbLine[] }[]): {
   crowd: number;
   other: number;
 } {
+  // Non-carried lines of one identity are SUMMED, not maxed. That is not a
+  // change of meaning — it is the same peak, arrived at the way markDayBookings
+  // now writes it. Since bookings are resolved as a running peak in scene
+  // order, the lines left uncarried for an identity are exactly its FIRST call
+  // plus each later INCREASE ("40", then "+5"), which are disjoint sets of
+  // people. Their sum is the largest number of that group on the floor at once.
+  // Taking the max here instead would book 40 on a day that calls 45 in its
+  // last scene, and under-book the day by every head added after the first
+  // call.
   const peak = (pick: (s: { crowd: CbLine[]; other: CbLine[] }) => CbLine[]): number => {
     const pools = new Map<string, number>();
     for (const sc of scenes) {
       for (const l of pick(sc)) {
         if (l.fromAbove) continue; // same people as an earlier scene
-        pools.set(l.key, Math.max(pools.get(l.key) || 0, l.no || 0));
+        pools.set(l.key, (pools.get(l.key) || 0) + (l.no || 0));
       }
     }
     let total = 0;
@@ -809,7 +898,10 @@ export function poolDayFees(scenes: { crowd: CbLine[] }[]): number {
       // a group's fee already travels to the line that books it
       // (markDayBookings), so the printed FEES column and this total agree
       if (l.fromAbove) continue;
-      heads.set(l.key, Math.max(heads.get(l.key) || 0, l.no || 0));
+      // Summed for the same reason poolDayHeads sums: the uncarried lines of
+      // one identity are its first call plus each later increase, so they are
+      // different people and each of them needs the wig.
+      heads.set(l.key, (heads.get(l.key) || 0) + (l.no || 0));
       sup.set(l.key, Math.max(sup.get(l.key) || 0, l.sup || 0));
     }
   }
@@ -944,6 +1036,10 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
   };
 
   for (const d of days) {
+    // A day with no scenes in scope is not a short day — it is not this unit's
+    // day at all, and printing its header with an empty body would read as a
+    // day the unit was called for and did nothing.
+    if (opts.sceneFilter && !(d.scenes || []).some(opts.sceneFilter)) continue;
     const wk = keyOf(d);
     if (useWeeks && wk && wk !== curWeek) {
       closeWeek();
@@ -981,6 +1077,7 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
         /^(SET MOVE|IF TIME ALLOWS|COMPANY MOVE|UNIT MOVE|MOVE)$/i.test(t)
       );
 
+      if (opts.sceneFilter && !opts.sceneFilter(sc)) return;
       const row = buildScene(d, sc, i, px);
       const empty = !row.crowd.length && !row.other.length;
       if (opts.hideEmpty && empty) return;

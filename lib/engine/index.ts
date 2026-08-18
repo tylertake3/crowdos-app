@@ -13,6 +13,8 @@ export * from "./crowd";
 export * from "./stunt";
 export * from "./parser";
 export * from "./merge";
+export * from "./crowd-merge";
+export * from "./units";
 export * from "./revise";
 export * from "./carry";
 export * from "./dance";
