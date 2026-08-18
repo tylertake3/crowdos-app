@@ -13,6 +13,7 @@
 
 import type {
   NamedCount,
+  ReqDept,
   ReqTier,
   ScheduleModel,
   Scene,
@@ -51,7 +52,17 @@ export const CB_COST_COLUMNS = ["FEES", "COST"] as const;
 // ---------------------------------------------------------------------------
 
 /** A reorderable block of columns. */
-export type CbSegKey = "scene" | "desc" | "day" | "crowd" | "other" | "cost";
+export type CbSegKey =
+  | "scene"
+  | "desc"
+  | "day"
+  | "crowd"
+  /** featured background, pulled out of CROWD CHARACTER into its own column */
+  | "featured"
+  /** spacts, pulled out of CROWD CHARACTER into their own column */
+  | "spacts"
+  | "other"
+  | "cost";
 
 /** One physical column, identified by the role its cell values play. */
 export type CbColRole =
@@ -62,6 +73,10 @@ export type CbColRole =
   | "crowdName"
   | "crowdCombo"
   | "crowdNotes"
+  | "featNo"
+  | "featName"
+  | "spactNo"
+  | "spactName"
   | "otherNo"
   | "otherName"
   | "fees"
@@ -89,6 +104,8 @@ export const CB_SEG_ORDER: CbSegKey[] = [
   "desc",
   "day",
   "crowd",
+  "featured",
+  "spacts",
   "other",
   "cost",
 ];
@@ -99,6 +116,8 @@ export const CB_SEG_LABELS: Record<CbSegKey, string> = {
   desc: "Scene description",
   day: "Day",
   crowd: "Crowd",
+  featured: "Featured",
+  spacts: "Spacts",
   other: "Stunts / other",
   cost: "Fees & costs",
 };
@@ -116,6 +135,13 @@ const CB_COL_META: Record<
   // the count-bearing column so the total rows still show the number here.
   crowdCombo: { header: "CROWD CHARACTER", block: false, count: true, money: false, width: 38, seg: "crowd" },
   crowdNotes: { header: "NOTES/CONTINUITY", block: false, count: false, money: false, width: 22, seg: "crowd" },
+  // Featured background and spacts, when the production reads its day with
+  // them pulled out. They are crowd like any other line — same numbers, same
+  // costs, same totals — just printed in a column of their own.
+  featNo: { header: "NO.", block: false, count: true, money: false, width: 6, seg: "featured" },
+  featName: { header: "FEATURED", block: false, count: false, money: false, width: 24, seg: "featured" },
+  spactNo: { header: "NO.", block: false, count: true, money: false, width: 6, seg: "spacts" },
+  spactName: { header: "SPACTS", block: false, count: false, money: false, width: 24, seg: "spacts" },
   otherNo: { header: "NO.", block: false, count: true, money: false, width: 6, seg: "other" },
   otherName: { header: "STUNTS/OTHER", block: false, count: false, money: false, width: 28, seg: "other" },
   fees: { header: "FEES", block: false, count: false, money: true, width: 11, seg: "cost" },
@@ -128,6 +154,8 @@ const CB_SEG_ROLES: Record<CbSegKey, CbColRole[]> = {
   desc: ["desc"],
   day: ["day"],
   crowd: ["crowdNo", "crowdName", "crowdNotes"],
+  featured: ["featNo", "featName"],
+  spacts: ["spactNo", "spactName"],
   other: ["otherNo", "otherName"],
   cost: ["cost"],
 };
@@ -143,6 +171,10 @@ export interface CbLayoutOpts {
   costs?: boolean;
   /** merge the crowd NO. and CROWD CHARACTER columns into one (count-then-name) */
   mergeCrowd?: boolean;
+  /** give featured background its own column, out of CROWD CHARACTER */
+  splitFeatured?: boolean;
+  /** give spacts their own column, out of CROWD CHARACTER */
+  splitSpacts?: boolean;
 }
 
 /**
@@ -164,9 +196,36 @@ export function cbColumnLayout(opts: CbLayoutOpts = {}): CbColDef[] {
   for (const k of CB_SEG_ORDER) if (!seen.has(k)) order.push(k);
 
   const defs: CbColDef[] = [];
+  const push = (role: CbColRole, seg: CbSegKey): void => {
+    const m = CB_COL_META[role];
+    defs.push({
+      role,
+      seg,
+      header: m.header,
+      block: m.block,
+      count: m.count,
+      money: m.money,
+      width: m.width,
+    });
+  };
+  // NOTES/CONTINUITY serves whichever crowd line is on the row, so when
+  // featured background or spacts have been pulled into columns of their own it
+  // has to sit AFTER them — a notes column printed in the middle of the crowd
+  // reads as belonging only to the column on its left.
+  const splitting =
+    (!!opts.splitFeatured && order.includes("featured")) ||
+    (!!opts.splitSpacts && order.includes("spacts"));
+  const lastCrowdSeg: CbSegKey = !splitting
+    ? "crowd"
+    : opts.splitSpacts && order.includes("spacts")
+    ? "spacts"
+    : "featured";
+
   for (const seg of order) {
     if (seg === "other" && !opts.includeOther) continue;
     if (seg === "cost" && !opts.costs) continue;
+    if (seg === "featured" && !opts.splitFeatured) continue;
+    if (seg === "spacts" && !opts.splitSpacts) continue;
     // the crowd segment collapses to one combined column when merge is on
     const roles =
       seg === "crowd"
@@ -175,18 +234,10 @@ export function cbColumnLayout(opts: CbLayoutOpts = {}): CbColDef[] {
           : (["crowdNo", "crowdName", "crowdNotes"] as CbColRole[])
         : CB_SEG_ROLES[seg];
     for (const role of roles) {
-      if (role === "crowdNotes" && !showNotes) continue;
-      const m = CB_COL_META[role];
-      defs.push({
-        role,
-        seg,
-        header: m.header,
-        block: m.block,
-        count: m.count,
-        money: m.money,
-        width: m.width,
-      });
+      if (role === "crowdNotes") continue; // placed below, once
+      push(role, seg);
     }
+    if (showNotes && seg === lastCrowdSeg) push("crowdNotes", "crowd");
   }
   return defs;
 }
@@ -236,6 +287,12 @@ export interface CbLine {
    * children, action vehicles) are printed as one merged list.
    */
   src?: "extras" | "children" | "avs";
+  /**
+   * Which department asked for this line, carried straight off the source row.
+   * Only ever set on the stunt requirement, where Crowd and Stunts both edit
+   * the same list. Display-only: it lets each area label the other's work.
+   */
+  by?: ReqDept;
   /**
    * The line is a pure pointer at another scene ("AS SCENE 12"), not a group
    * of its own — it never books and never gets re-labelled.
@@ -397,6 +454,10 @@ export interface CbOpts {
   notes?: boolean;
   /** merge the crowd NO. and CROWD CHARACTER columns into one (count-then-name) */
   mergeCrowd?: boolean;
+  /** give featured background its own column, out of CROWD CHARACTER */
+  splitFeatured?: boolean;
+  /** give spacts their own column, out of CROWD CHARACTER */
+  splitSpacts?: boolean;
   /** desired column-segment order (see cbColumnLayout); invalid entries ignored */
   order?: CbSegKey[];
   /** print week banners and week totals */
@@ -549,6 +610,8 @@ function toLine(
     sup: +(r.sup ?? 0) || 0,
     // carried, never inferred: the row itself says which role it is paid on
     ...(clean(r.roleId) ? { roleId: clean(r.roleId) } : {}),
+    // and which department asked for it, so both areas can label the other's work
+    ...(r.by === "crowd" || r.by === "stunt" ? { by: r.by } : {}),
     cost: 0,
     rate: 0,
   };
@@ -1177,6 +1240,8 @@ export function projectCrowdDoc(model: ScheduleModel, opts: CbOpts = {}): CbDoc 
     includeOther,
     costs: showCosts,
     mergeCrowd: opts.mergeCrowd,
+    splitFeatured: opts.splitFeatured,
+    splitSpacts: opts.splitSpacts,
   });
   return {
     title: clean(opts.production) || "CROWD BREAKDOWN",
@@ -1293,6 +1358,30 @@ export function cbComboText(c: CbLine | undefined, blank: boolean, na: boolean):
   return [no, c.name].filter(Boolean).join(" ");
 }
 
+/**
+ * How one scene's crowd lines are dealt out across the columns this layout has.
+ *
+ * Every consumer — the screen, the PDF, the .xlsx and the .csv — asks THIS, so
+ * a production that pulls featured background or spacts into their own column
+ * sees the same document everywhere, and nothing has to be kept in step by
+ * hand. With neither column on, `main` is simply the whole crowd list and the
+ * document is exactly what it has always been.
+ */
+export function cbSplitScene(
+  sc: CbScene,
+  layout: CbColDef[]
+): { main: CbLine[]; featured: CbLine[]; spacts: CbLine[]; rows: number } {
+  const hasFeat = layout.some((c) => c.role === "featName");
+  const hasSpact = layout.some((c) => c.role === "spactName");
+  const featured = hasFeat ? sc.crowd.filter((l) => l.tier === "Featured") : [];
+  const spacts = hasSpact ? sc.crowd.filter((l) => l.tier === "SPACT") : [];
+  const main = sc.crowd.filter(
+    (l) => !(hasFeat && l.tier === "Featured") && !(hasSpact && l.tier === "SPACT")
+  );
+  const rows = Math.max(1, main.length, featured.length, spacts.length, sc.other.length);
+  return { main, featured, spacts, rows };
+}
+
 export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   const layout = doc.layout;
   const w = layout.length;
@@ -1347,6 +1436,12 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   // merges count and name, where the figure has to stay a literal.
   const lineNoIdx = roleIndex(layout, "crowdNo");
   const LINE_NO_COL = lineNoIdx >= 0 ? cbColLetter(lineNoIdx) : "";
+  // A featured or spact line printed in its own column keeps its money live in
+  // exactly the same way — the formula just points at that column's NO. cell.
+  const featNoIdx = roleIndex(layout, "featNo");
+  const spactNoIdx = roleIndex(layout, "spactNo");
+  const FEAT_NO_COL = featNoIdx >= 0 ? cbColLetter(featNoIdx) : "";
+  const SPACT_NO_COL = spactNoIdx >= 0 ? cbColLetter(spactNoIdx) : "";
   const sumOf = (rowNums: number[], col: string): string =>
     rowNums.map((n) => `${col}${n}`).join("+");
   // A per-line money cell as a LIVE formula: headcount × cost-per-person, so
@@ -1355,9 +1450,14 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
   // printed number is exact and only moves when the count does. Falls back to
   // the literal where there is no numeric count cell to point at (merged
   // layout) or nothing to charge.
-  const perPersonCell = (rowNum: number, per: number, result: number): CbCell => {
-    if (!LINE_NO_COL || per <= 0 || !result) return result || null;
-    return { formula: `${LINE_NO_COL}${rowNum}*${round2(per)}`, result };
+  const perPersonCell = (
+    rowNum: number,
+    per: number,
+    result: number,
+    col: string = LINE_NO_COL
+  ): CbCell => {
+    if (!col || per <= 0 || !result) return result || null;
+    return { formula: `${col}${rowNum}*${round2(per)}`, result };
   };
   // A day's people: add its scene lines, less the carried ones. Needs both a
   // numeric count column and the name column that labels it — when the count
@@ -1399,13 +1499,25 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
         .filter(Boolean)
         .join("\n");
       const sceneCell = [sc.num, sc.loc].filter(Boolean).join("\n");
-      const n = Math.max(1, sc.crowd.length, sc.other.length);
+      const split = cbSplitScene(sc, layout);
+      const n = split.rows;
       const first = rows.length + 1;
       for (let i = 0; i < n; i++) {
-        const c = sc.crowd[i];
+        const c = split.main[i];
+        const f = split.featured[i];
+        const sp = split.spacts[i];
         const o = sc.other[i];
         const blank = i === 0 && !sc.crowd.length;
-        const heads = c && !c.fromAbove ? c.no || 0 : 0;
+        // FEES and COST report the whole row. Where the row carries exactly one
+        // crowd line the money stays live (headcount × per-head, pointing at
+        // that line's own NO. cell); where a row happens to carry a plain, a
+        // featured and a spact line at once it prints the settled figures.
+        const onRow = [c, f, sp].filter(Boolean) as CbLine[];
+        const only = onRow.length === 1 ? onRow[0] : null;
+        const onlyCol = only === c ? LINE_NO_COL : only === f ? FEAT_NO_COL : SPACT_NO_COL;
+        const rowFees = onRow.reduce((a, l) => a + (l.fromAbove ? 0 : (l.no || 0) * (l.sup || 0)), 0);
+        const rowCost = onRow.reduce((a, l) => a + (l.cost || 0), 0);
+        const notes = (c && c.notes) || (f && f.notes) || (sp && sp.notes) || "";
         // the row this line lands on, so its FEES/COST formula can point back at
         // its own headcount cell
         const rowNum = rows.length + 1;
@@ -1421,13 +1533,27 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
               case "crowdNo": return c ? (c.no ?? null) : null;
               case "crowdName": return c ? c.name : blank && sc.na ? "N/A" : null;
               case "crowdCombo": return cbComboText(c, blank, sc.na) || null;
-              case "crowdNotes": return c ? c.notes || null : null;
+              case "crowdNotes": return notes || null;
+              case "featNo": return f ? (f.no ?? null) : null;
+              case "featName": return f ? f.name : null;
+              case "spactNo": return sp ? (sp.no ?? null) : null;
+              case "spactName": return sp ? sp.name : null;
               case "otherNo": return o ? (o.no ?? null) : null;
               case "otherName": return o ? o.name : null;
               // FEES and COST are live: headcount × fee-per-head and headcount ×
               // cost-per-person, so retyping the NO. recalculates the money.
-              case "fees": return c && c.sup ? perPersonCell(rowNum, c.sup, heads * c.sup) : null;
-              case "cost": return c && c.cost ? perPersonCell(rowNum, c.rate, c.cost) : null;
+              case "fees":
+                return rowFees
+                  ? only
+                    ? perPersonCell(rowNum, only.sup || 0, rowFees, onlyCol)
+                    : rowFees
+                  : null;
+              case "cost":
+                return rowCost
+                  ? only
+                    ? perPersonCell(rowNum, only.rate, rowCost, onlyCol)
+                    : rowCost
+                  : null;
               default: return null;
             }
           }),
@@ -1458,14 +1584,21 @@ export function cbToStyledSheet(doc: CbDoc): CbStyledSheet {
           : dayTotalRows;
       const live = src.length > 0;
 
+      // A day's crowd is everything the day books, wherever it is printed — so
+      // when featured or spacts have columns of their own, their numbers are
+      // added in alongside the plain background rather than quietly left out.
       const dayCrowdFormula =
         r.kind === "dayTotal"
-          ? dayCount(
-              roleIndex(layout, "crowdNo"),
-              roleIndex(layout, "crowdName"),
-              dayFirstDetailRow,
-              rows.length
-            )
+          ? ([
+              ["crowdNo", "crowdName"],
+              ["featNo", "featName"],
+              ["spactNo", "spactName"],
+            ] as [CbColRole, CbColRole][])
+              .map(([no, name]) =>
+                dayCount(roleIndex(layout, no), roleIndex(layout, name), dayFirstDetailRow, rows.length)
+              )
+              .filter(Boolean)
+              .join("+") || null
           : null;
       const dayOtherFormula =
         r.kind === "dayTotal"
@@ -1576,11 +1709,14 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
         [sc.tod, sc.scriptDay].filter(Boolean).join(" "),
         sc.pages,
       ].filter(Boolean);
-      const n = Math.max(1, sc.crowd.length, sc.other.length);
+      const split = cbSplitScene(sc, layout);
+      const n = split.rows;
       // scene number prints once, with the shooting location under it
       const sceneCell = sc.loc ? `${sc.num}  ${sc.loc}` : sc.num;
       for (let i = 0; i < n; i++) {
-        const c = sc.crowd[i];
+        const c = split.main[i];
+        const f = split.featured[i];
+        const sp = split.spacts[i];
         const o = sc.other[i];
         // A scene nobody has looked at yet is left BLANK — there is nothing to
         // say about it yet, and inventing a label ("not yet assessed") just
@@ -1588,7 +1724,10 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
         // scene confirmed as needing nobody still says "N/A", because that is
         // a real answer rather than an empty space.
         const emptyLabel = sc.na ? "N/A" : "";
-        const heads = c && !c.fromAbove ? c.no || 0 : 0;
+        const onRow = [c, f, sp].filter(Boolean) as CbLine[];
+        const rowFees = onRow.reduce((a, l) => a + (l.fromAbove ? 0 : (l.no || 0) * (l.sup || 0)), 0);
+        const rowCost = onRow.reduce((a, l) => a + (l.cost || 0), 0);
+        const notes = (c && c.notes) || (f && f.notes) || (sp && sp.notes) || "";
         rows.push(
           build((role) => {
             switch (role) {
@@ -1596,13 +1735,17 @@ export function cbToSheet(doc: CbDoc): { name: string; rows: string[][] } {
               case "desc": return i === 0 ? descLines.join(" | ") : "";
               case "day": return i === 0 ? dayLines.join(" | ") : "";
               case "crowdNo": return c ? (c.no ?? "") : "";
-              case "crowdName": return c ? c.name : i === 0 ? emptyLabel : "";
+              case "crowdName": return c ? c.name : i === 0 && !onRow.length ? emptyLabel : "";
               case "crowdCombo": return cbComboText(c, i === 0 && !sc.crowd.length, sc.na);
-              case "crowdNotes": return c ? c.notes : "";
+              case "crowdNotes": return notes;
+              case "featNo": return f ? (f.no ?? "") : "";
+              case "featName": return f ? f.name : "";
+              case "spactNo": return sp ? (sp.no ?? "") : "";
+              case "spactName": return sp ? sp.name : "";
               case "otherNo": return o ? (o.no ?? "") : "";
               case "otherName": return o ? o.name + (o.notes ? ` — ${o.notes}` : "") : "";
-              case "fees": return c && c.sup ? money2(heads * c.sup) : "";
-              case "cost": return c ? money2(c.cost) : "";
+              case "fees": return rowFees ? money2(rowFees) : "";
+              case "cost": return rowCost ? money2(rowCost) : "";
               default: return "";
             }
           })
