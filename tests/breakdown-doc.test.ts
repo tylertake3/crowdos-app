@@ -228,21 +228,44 @@ describe("crowd breakdown document", () => {
     expect(total.no).toBe(15);
   });
 
-  it("books a group where its call is biggest, and points the smaller scene at it", () => {
+  it("calls a group where it is first needed and books the extra where it grows", () => {
+    // Bookings resolve in READING ORDER, not by which scene is biggest. Scene 1
+    // calls 2 guards; scene 2 needs 4, so those 2 are already on the floor and
+    // only the 2 extra are booked there. Nothing ever points forward — the old
+    // rule made scene 1 read "Guards (FROM SC 2)", a pointer at a row four
+    // lines below it.
     const doc = projectCrowdDoc(model([day({ scenes: [
       scene({ num: "1", saChars: [{ name: "Guards", count: 2 }] }),
       scene({ num: "2", saChars: [{ name: "Guards", count: 4 }] }),
     ] })]));
     const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
-    // the day calls 4 guards; the 2 in scene 1 are two of those same four, so
-    // scene 1 still reads "2" and points at the scene that books them
-    expect(scenes[0].crowd[0]).toMatchObject({
-      no: 2,
-      name: "Guards (FROM SC 2)",
-      fromAbove: true,
-    });
-    expect(scenes[1].crowd[0]).toMatchObject({ no: 4, name: "Guards", fromAbove: false });
+    expect(scenes[0].crowd[0]).toMatchObject({ no: 2, name: "Guards", fromAbove: false });
+    expect(scenes[1].crowd.map((l) => ({ no: l.no, name: l.name, fromAbove: l.fromAbove }))).toEqual([
+      { no: 2, name: "Guards (FROM ABOVE)", fromAbove: true },
+      { no: 2, name: "Guards (ADDITIONAL)", fromAbove: false },
+    ]);
+    // still the peak, reached as 2 + 2 rather than as a single line of 4
     expect(doc.totals.crowd).toBe(4);
+  });
+
+  it("never writes a forward pointer, however the day is ordered", () => {
+    const doc = projectCrowdDoc(model([day({ scenes: [
+      scene({ num: "6", saChars: [{ name: "SA's", count: 40 }] }),
+      scene({ num: "17", saChars: [{ name: "SA's", count: 32 }] }),
+      scene({ num: "44", saChars: [{ name: "SA's", count: 32 }] }),
+      scene({ num: "5", saChars: [{ name: "SA's", count: 45 }] }),
+    ] })]));
+    const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
+    const names = scenes.flatMap((sc) => sc.crowd.map((l) => l.no + " " + l.name));
+    expect(names).toEqual([
+      "40 SA's",
+      "32 SA's (FROM ABOVE)",
+      "32 SA's (FROM ABOVE)",
+      "40 SA's (FROM ABOVE)",
+      "5 SA's (ADDITIONAL)",
+    ]);
+    expect(names.some((n) => /FROM SC|FROM BELOW/i.test(n))).toBe(false);
+    expect(doc.totals.crowd).toBe(45);
   });
 
   it("carries a smaller later group from the scene that booked it", () => {
@@ -553,9 +576,10 @@ describe("crowd breakdown document", () => {
       expect(doc.totals.crowd).toBe(85);
     });
 
-    it("keeps a group's fee with the line that books it", () => {
-      // the fee is put on scene 1's line, but scene 2 makes the bigger call —
-      // so the fee has to travel, or the day quietly loses it
+    it("charges a group's fee once per head, in the scene each head is called", () => {
+      // The fee is a per-head cost of putting somebody in the wig, so the day
+      // pays it 6 times for 6 nurses and never 6 times for the same nurse.
+      // Scene 1 calls 2 of them, scene 2 calls the other 4.
       const doc = projectCrowdDoc(
         model([
           day({
@@ -569,10 +593,10 @@ describe("crowd breakdown document", () => {
       );
       const total = doc.rows.find((r) => r.kind === "dayTotal") as CbTotalRow;
       expect(total.no).toBe(6);
-      expect(total.fees).toBe(150); // 6 × £25, paid once
+      expect(total.fees).toBe(150); // 6 × £25, paid once per head
       const scenes = doc.rows.filter((r) => r.kind === "scene") as CbScene[];
-      expect(scenes[0].fees).toBe(0); // carried line — never charged
-      expect(scenes[1].fees).toBe(150);
+      expect(scenes[0].fees).toBe(50); //  2 heads called here
+      expect(scenes[1].fees).toBe(100); // 4 more called here; the first 2 carried
     });
 
     it("narrows to six columns when stunts/other is switched off", () => {

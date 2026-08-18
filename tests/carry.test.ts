@@ -18,6 +18,7 @@ import {
   storedDiffByDay, storedCutByDay, dayChangeLabels, sceneChangeLabel,
   diffRevisions, prepModel, sceneIndexAllOf, sceneCrowdHeads,
   carriedDayRecords, carriedDayId, computeCrowdCosts, describeRevision,
+  carrySceneKey, sceneKey,
 } from "../lib/engine";
 import type { Scene, ScheduleModel, ShootDay } from "../lib/engine";
 import type { SlotDay, SlotMigrationPlan } from "../lib/engine/carry";
@@ -1522,5 +1523,44 @@ describe("cdayKey — a collided already-shot day keeps its own settings", () =>
   it("matches the identity carriedDayId stitches the day in under", () => {
     const shot = { id: "M12", unit: "Main", num: 12, collided: true, fromRev: "Blue" };
     expect(cdayKey(shot).split("|")[1]).toBe(carriedDayId(shot, "").replace(/^M/, ""));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The key that has to MEET the index
+// ---------------------------------------------------------------------------
+//
+// Regression origin (FML, August 2026): carrySceneKey joined a scene's number
+// and part with nothing between them ("875/7") while sceneIndexAllOf — the
+// index it is used to look work up in — files scenes under the engine's
+// sceneKey ("87pt5/7"). The two could never meet, so on every revision every
+// scene with a part number found no target and its crowd work was stranded.
+// Silent, and about half the scenes on a schedule that splits parts.
+describe("carrySceneKey", () => {
+  it("produces the same key sceneIndexAllOf files a scene under", () => {
+    const cases: [string, string][] = [
+      ["87", "5/7"], ["55", "15/29"], ["10", "1"], ["2", "3/3"], ["43", ""],
+    ];
+    for (const [num, part] of cases) {
+      expect(carrySceneKey(num, part)).toBe(sceneKey({ num, part }));
+    }
+    // and the value itself is the joined form, not the old concatenation
+    expect(carrySceneKey("87", "5/7")).toBe("87pt5/7");
+  });
+
+  it("finds a part-numbered scene's work in the next revision", () => {
+    const sc = (num: string, part = "") => ({
+      num, part, ie: "INT", slug: "", tod: "", scriptDay: "", pages: "",
+      unit: "Main", desc: "", sa: 0, veh: 0, pod: false, cast: [], tags: [],
+    });
+    const next: ScheduleModel = {
+      days: [{ num: 9, date: "", sr: "", ss: "", loc: "", hours: "", type: "",
+               cams: "", pages: "", unit: "Main", scenes: [sc("87", "5/7")] }],
+      castMap: {}, notes: [],
+    };
+    // the schedule moved 87pt5/7 from day 2 to day 9 — the work must follow
+    const hits = sceneCarryTargets(next, carrySceneKey("87", "5/7"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0].day.num).toBe(9);
   });
 });

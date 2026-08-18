@@ -49,6 +49,25 @@ export function slotSceneKey(num?: string, part?: string): string {
   return ((num || "") + (part || "")).toLowerCase().replace(/[\s.]+/g, "");
 }
 
+/**
+ * The scene identity used to LOOK WORK UP in another revision's model — it must
+ * be the engine's own `sceneKey`, because that is what sceneIndexAllOf files
+ * the new model's scenes under.
+ *
+ * This is not the same string as slotSceneKey and must not be confused with it.
+ * slotSceneKey only has to be stable within one namespace; this one has to MEET
+ * the index. They differed by the "pt" separator — a schedule parser's
+ * {num:"87", part:"5/7"} keyed as "875/7" here and as "87pt5/7" there — so
+ * every scene with a part number failed to find a target and its crowd was
+ * stranded on every single revision. On FML that is roughly half the scenes,
+ * and the failure is silent: the work simply is not there in the new revision.
+ * (Exactly the bug merge.ts's sceneKey comment describes, in the one place that
+ * had not been changed to match.)
+ */
+export function carrySceneKey(num?: string, part?: string): string {
+  return sceneKey({ num: num || "", part: part || "" });
+}
+
 /** How many EARLIER scenes on this day carry the same scene identity. Almost
  *  always 0; only a day that genuinely lists a scene twice goes further. */
 export function sceneOrdinal(day: SlotDay, idx: number): number {

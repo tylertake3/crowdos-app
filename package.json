@@ -9,6 +9,7 @@
     "test": "TZ=Europe/London vitest run",
     "build:check": "NEXT_DIST_DIR=.next-check next build --no-lint",
     "backup": "bash scripts/backup-db.sh",
+    "create-user": "node scripts/create-user.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:js": "tsc -p tsconfig.checkjs.json",
     "lint": "eslint .",

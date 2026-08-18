@@ -196,6 +196,29 @@ export interface Scene {
   // Any source line that did not parse, kept verbatim against its scene for
   // manual triage. Nothing is ever silently dropped.
   unparsed?: string[];
+  // The unit stream this scene belongs to: the main unit, or a 2nd/splinter
+  // block running alongside it on the same day. Set by resolveDayUnits from the
+  // document's own markings; see lib/engine/units.ts for why this is a scene
+  // field and not a second day record. Named `unit2` because `unit` on a Scene
+  // already means the Main/2nd SCHEDULE the scene was uploaded as.
+  unit2?: "main" | "second" | "splinter";
+  // WHO last said what this scene's crowd is. Set to "breakdown_import" by
+  // mergeCrowdBreakdown on every scene it writes, and it is what tells the app
+  // which scenes belong in the durable CROWD LAYER (see writeCrowdLayer in
+  // lib/board/app.js).
+  //
+  // The distinction it draws is the whole two-document model: a scene reading a
+  // bare "SA'S 40" that nobody on the crowd side has touched is the 1st AD's
+  // number, and the next schedule is entitled to change it. A scene reading
+  // "2 Hospital Nurses, 1 Hospital Doctor" is the Crowd 2nd AD's work, and no
+  // schedule may ever overwrite it.
+  crowdSource?: ReqSource;
+  // TRUE on a scene that a crowd breakdown added because the schedule on the
+  // board has no such scene on that day. The scene is real crowd the production
+  // must pay for, so it is never dropped — but it has NOT been confirmed by the
+  // shooting schedule, and every surface that shows it must say so. See
+  // mergeCrowdBreakdown.
+  fromBreakdown?: boolean;
 }
 
 export interface ShootDay {
@@ -273,6 +296,19 @@ export interface ShootDay {
   // and is never overwritten — the real shooting location is held separately.
   locBlocks?: LocBlock[];
   unparsed?: string[];
+  // TRUE on a day that is NOT in the shooting schedule document: added by hand
+  // in the app, or brought in by a crowd breakdown that has a day the schedule
+  // does not. It is what keeps such a day alive across schedule revisions —
+  // the revision diff skips manual days (they cannot be "cut" by a document
+  // that never contained them) and restoreManualDays re-adds them to each new
+  // revision. Without it a breakdown-only day would exist exactly until the
+  // next schedule landed.
+  manual?: boolean;
+  // TRUE on a day a crowd breakdown added because no day on the board matched
+  // it. Same contract as Scene.fromBreakdown: kept (the crowd is real and
+  // costs money) but flagged everywhere, because the shooting schedule has not
+  // said this day exists.
+  fromBreakdown?: boolean;
 }
 
 export interface LocBlock {

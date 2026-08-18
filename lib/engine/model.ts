@@ -1,6 +1,7 @@
 // Model helpers: dates, week grouping, per-day peaks, unit prep & merging.
 
 import type { CastToken, ScheduleModel, Scene, ShootDay } from "./types";
+import { resolveDayUnits } from "./units";
 
 const MONTHS: Record<string, number> = {
   january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
@@ -319,6 +320,10 @@ export function prepModel(model: ScheduleModel, unit: "Main" | "2nd"): ScheduleM
     }
     if (/^studio$/i.test((d.loc || "").trim())) d.loc = "OMAX Studio";
     normalizeLocBlocks(d);
+    // Which unit each scene belongs to, from the document's own markings. Done
+    // here so every model — parsed, AI-read, breakdown-merged, hand-built —
+    // arrives tagged, and no view has to re-derive it.
+    resolveDayUnits(d);
   });
   model.multiUnit = false;
   return model;
