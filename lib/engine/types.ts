@@ -12,9 +12,18 @@ export type CastType =
   | "stuntDbl"
   | "stuntExtra";
 
+// Which department put a requirement there. Two departments legitimately edit
+// the stunt requirement: the Crowd AD who sits with the 1st AD and knows the
+// day needs six stunt drivers, and the stunt coordinator who prices them. The
+// stamp is display-only provenance — it never changes a rate — so each side
+// can see the other's work rather than quietly overwriting it.
+export type ReqDept = "crowd" | "stunt";
+
 export interface CastToken {
   code: string;
   type: CastType;
+  /** Which department asked for this person. Display-only; never priced on. */
+  by?: ReqDept;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +106,10 @@ export interface NamedCount {
   // silently dropped or costed at zero. See roles.ts.
   roleId?: string;
   source?: ReqSource;
+  // Which DEPARTMENT asked for this row. Only meaningful on the stunt
+  // requirement, where Crowd and Stunts both edit the same list. Display-only
+  // provenance: it never changes a rate or which engine prices the row.
+  by?: ReqDept;
 }
 
 // Two kinds of supplementary fee a recurring group can carry. The distinction

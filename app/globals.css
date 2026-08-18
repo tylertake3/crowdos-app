@@ -40,6 +40,12 @@
   --hv:#ff6b2c; --hv2:#ff8a3d; --hv-dim:rgba(255,107,44,.14); --hv-line:rgba(255,107,44,.42);
   --hvink:#000;
   --crowd:#5b8def; --crowd-dim:rgba(91,141,239,.15);
+  /* the crowd tiers, named once and used everywhere they appear: plain
+     background is blue, featured is amber, spacts are purple. The day header,
+     the day board and the breakdown document all read from these, so a tier is
+     the same colour wherever you meet it. */
+  --feat:#e8c268; --feat-dim:rgba(232,194,104,.12); --feat-line:rgba(232,194,104,.45);
+  --spact:#b78aff; --spact-dim:rgba(183,138,255,.14); --spact-line:rgba(183,138,255,.45);
   --money:#ffd666; --note:#e8c268; --notebg:rgba(232,194,104,.08);
   --dayext:#ffc53d; --dayint:#c9cfd8; --nightint:#5b8def; --nightext:#4cc38a; --dusk:#c08ae0;
   /* semantic status — one definition each, per theme */
@@ -83,6 +89,10 @@ body.light{
   --hv:#c2410c; --hv2:#ea580c; --hv-dim:rgba(194,65,12,.08); --hv-line:rgba(194,65,12,.35);
   --hvink:#fff;
   --crowd:#2563eb; --crowd-dim:rgba(37,99,235,.07);
+  /* ink on white needs to be darker to stay readable — #b78aff is 2.3:1 on
+     white, #6b3fd4 is 7.2:1, and it still reads as the same purple */
+  --feat:#8a6a1f; --feat-dim:rgba(154,107,0,.09); --feat-line:rgba(138,106,31,.45);
+  --spact:#6b3fd4; --spact-dim:rgba(107,63,212,.08); --spact-line:rgba(107,63,212,.35);
   --money:#17181a; --note:#8a6a1f; --notebg:rgba(154,107,0,.06);
   --dayint:#8d97a5;
   --danger:#e11d48; --danger-hover:#be123c; --danger-bg:rgba(225,29,72,.10); --danger-line:rgba(225,29,72,.38);
@@ -337,8 +347,22 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{cursor:not-allowed}
 .person.co b{color:var(--hvink)}
 .person.xt{border-style:dashed;border-color:var(--hv-line);color:var(--ink)}
 .person.dbl{border-color:var(--warn);background:var(--notebg);color:var(--note)}
+/* the day's crowd summary: a featured group is amber and a spact is purple in
+   the header exactly as it is on the scene lines below */
+.person.crsa{background:var(--crowd-dim);border-color:transparent;color:var(--crowd)}
+.person.crsa b{color:var(--crowd)}
+.person.crfeat{background:var(--feat-dim);border-color:var(--feat-line);color:var(--feat)}
+.person.crfeat b{color:var(--feat)}
+.person.crspact{background:var(--spact-dim);border-color:var(--spact-line);color:var(--spact)}
+.person.crspact b{color:var(--spact)}
+.person.crrole{background:var(--hv-dim);border-color:var(--hv-line);color:var(--hv)}
+.person.crrole b{color:var(--hv)}
+.teamcount .tc-sa,.teamcount .tc-sa b{color:var(--crowd)}
+.teamcount .tc-feat,.teamcount .tc-feat b{color:var(--feat)}
+.teamcount .tc-spact,.teamcount .tc-spact b{color:var(--spact)}
+.teamcount .tc-role,.teamcount .tc-role b{color:var(--hv)}
 
-.colhead,.strip{display:grid;grid-template-columns:5px 84px 46px 1fr 138px 158px 92px 34px}
+.colhead,.strip{display:grid;grid-template-columns:5px 84px 46px 1fr 138px 560px 34px}
 .colhead{border-top:1px solid var(--line);background:var(--panel)}
 .colhead div{padding:6px 10px;font-size:var(--fs-2);font-weight:600;color:var(--faint)}
 .colhead .c-stunt{color:var(--hv)}
@@ -375,10 +399,81 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{cursor:not-allowed}
 .code.cr{background:var(--crowd-dim);border-color:transparent;color:var(--crowd)}
 .code.click,.dpill.click{cursor:pointer;border:1px dashed var(--crowd)!important}
 .code.click:hover,.dpill.click:hover{background:var(--crowd);color:#fff}
-.code.feat{background:var(--notebg);border-color:transparent;color:var(--note)}
-.code.spact{background:rgba(183,138,255,.12);border-color:transparent;color:#b78aff}
+.code.feat{background:var(--feat-dim);border-color:transparent;color:var(--feat)}
+.code.spact{background:var(--spact-dim);border-color:transparent;color:var(--spact)}
 .code.veh{background:none;border-color:var(--line2);color:var(--faint)}
 .dash{color:var(--muted);font-size:var(--fs-4)}
+
+/* ---- the requirement block: the day board read as the breakdown document ----
+   NO. · CROWD CHARACTER · NOTES / CONTINUITY · NO. · STUNTS / OTHER · COST,
+   one ruled line per requirement. Three sub-grids share one set of columns and
+   rows (subgrid), so a line reads straight across even when a long character
+   name wraps — the alignment is real, not a guess at row heights. The crowd
+   and stunts halves stay whole cells, so click-to-edit, drag-to-move and the
+   drop highlight behave exactly as they did with the old chips. */
+.req{display:grid;position:relative;padding:0!important;
+  grid-template-rows:repeat(var(--req-rows,1),auto)}
+.strip>.req{display:grid;align-items:stretch}
+/* the column groups — the renderer places each one and says how wide it is,
+   so an optional Featured / Spacts column can be added without a second set
+   of rules that has to be kept in step */
+.reqcrowd,.reqcfeat,.reqcspact,.reqnote,.reqother,.reqcost{display:grid;grid-row:1/-1;grid-template-rows:subgrid}
+.rqc{padding:7px 8px;min-height:30px;font-size:var(--fs-3);color:var(--ink);line-height:1.35;
+  border-bottom:1px solid var(--line);border-left:1px solid var(--line);overflow-wrap:anywhere}
+.rqc.rqlast{border-bottom:none}
+.rqno{text-align:right;white-space:nowrap;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  font-size:var(--fs-2);color:var(--sub)}
+.rqname{font-weight:600}
+.rqnote{font-size:var(--fs-2);color:var(--sub);font-weight:400}
+.rqcostc{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;
+  font-size:var(--fs-2);color:var(--sub)}
+/* a carried line is the same people as a scene above: shown so the day
+   reconciles, never counted again — so it reads as a reference, not a booking */
+.req .fromabove{color:#7a5fd0;font-style:italic;font-weight:500}
+.req .tbc{color:var(--warn)}
+.rqna{color:var(--faint);font-weight:400}
+.rqadd{color:var(--faint);font-weight:500}
+.reqcell.editable:hover .rqadd{color:var(--crowd)}
+/* tier badge — the same SA / FEAT / SPACT label the document prints */
+.rqtier{display:inline-block;font-family:var(--mono);font-size:var(--fs-1);font-weight:700;letter-spacing:.04em;
+  border:1px solid var(--line2);background:var(--panel2);color:var(--faint);
+  border-radius:var(--r-xs);padding:0 4px;line-height:1.5;margin-right:5px;vertical-align:1px}
+.rqtier.t-featured{background:var(--feat-dim);border-color:var(--feat-line);color:var(--feat)}
+.rqtier.t-spact{background:var(--spact-dim);border-color:var(--spact-line);color:var(--spact)}
+/* the line itself is toned to its tier too, so the colour you see in the day's
+   summary at the top is the colour you see on the line it came from */
+.rqname.t-featured .rqtext{color:var(--feat)}
+.rqname.t-spact .rqtext{color:var(--spact)}
+.rqtier.t-role{background:var(--hv-dim);border-color:var(--hv-line);color:var(--hv)}
+.rqtext{display:inline}
+/* the name IS the old chip: click to edit, drag to move, right-click for the
+   group menu — so it says so on hover instead of pretending to be plain text */
+.rqtext.crgrp{cursor:pointer;border-radius:var(--r-xs);padding:0 3px;margin:0 -3px}
+.rqtext.crgrp:hover{background:var(--crowd-dim);color:var(--crowd)}
+.rqtext.crgrp.needsname{color:var(--warn)}
+.rqtext.crgrp.crsel{background:var(--crowd);color:#fff}
+.rqtext.crgrp.crdragging{opacity:.45}
+.reqcell.drop-ok{box-shadow:inset 0 0 0 2px var(--crowd)}
+/* header: the document's column names, over the same six columns */
+.colhead .req{padding:0}
+.colhead .rqc{min-height:0;padding:6px 8px;border-bottom:none;
+  font-size:var(--fs-2);font-weight:600;color:var(--faint)}
+.colhead .rqc.h-crowdno,.colhead .rqc.h-featno,.colhead .rqc.h-spactno,
+.colhead .rqc.h-otherno,.colhead .rqc.h-cost{text-align:right;white-space:nowrap}
+/* show / hide, per production */
+.cols-nocrowd{--rq-no:0px;--rq-char:0px;--rq-feat:0px;--rq-spact:0px;--rq-note:0px}
+.cols-nocrowd .reqcrowd,.cols-nocrowd .reqcfeat,.cols-nocrowd .reqcspact,.cols-nocrowd .reqnote,
+.cols-nocrowd .h-crowdno,.cols-nocrowd .h-crowd,.cols-nocrowd .h-featno,.cols-nocrowd .h-feat,
+.cols-nocrowd .h-spactno,.cols-nocrowd .h-spact,.cols-nocrowd .h-note{display:none}
+.cols-nostunts{--rq-ono:0px;--rq-other:0px}
+.cols-nostunts .reqother,.cols-nostunts .h-otherno,.cols-nostunts .h-other{display:none}
+.cols-nocost{--rq-cost:0px}
+.cols-nocost .reqcost,.cols-nocost .h-cost{display:none}
+/* Pulling Featured or Spacts out into their own column needs the room to do it
+   in — the block widens by default, and a width the user has dragged for
+   themselves still wins (it is set on the board itself). */
+.cols-featsplit,.cols-spactsplit{--w-req:700px}
+.cols-featsplit.cols-spactsplit{--w-req:830px}
 
 /* notes */
 .notebtn{background:none;border:none;color:var(--faint);font-size:14px;padding:6px;line-height:1}
@@ -388,6 +483,28 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{cursor:not-allowed}
 .notearea textarea{width:100%;background:var(--notebg);border:1px dashed var(--warn-line);border-radius:7px;color:var(--note);
   font-family:var(--body);font-size:var(--fs-3);padding:7px 10px;resize:vertical;min-height:34px}
 .notearea textarea::placeholder{color:var(--faint)}
+/* ---- one voice: the day board reads in capitals ------------------------
+   The breakdown document is typed in capitals, and the board is the same
+   paperwork seen a different way — so scene numbers, sets, action, crowd
+   characters, notes and the day's own heading all read in capitals too, and an
+   AD moving between the two never has to re-read anything. What you TYPE is
+   left exactly as you typed it, and the sentences that explain something (a
+   warning, a "breakdown only" tag) stay sentences, because shouting an
+   explanation makes it harder to read, not easier. */
+.colhead,.strip{text-transform:uppercase}
+.strip .notearea,.strip .reqarea,.strip .tag,.strip [contenteditable="true"]{text-transform:none}
+.dayhead .ddate,.dayhead .dnum,.dayhead .dlocs,.dayhead .dmeta,.dayhead .dh-stunts,
+.dayfoot .sl,.dayfoot .dh-cost small{text-transform:uppercase}
+.dayhead .unitpill.bdonly,.dayhead .dpill.nightwarn,.dayhead .dpill.dblwarn,
+.dayfoot .dpill.nightwarn,.dayfoot .dpill.dblwarn{text-transform:none}
+
+/* the day's money, under the day's figures — where a column of costs ends */
+.dayfoot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 14px;border-top:1px solid var(--line2);background:var(--panel)}
+.dayfoot .sl{font-size:var(--fs-1);font-weight:600;color:var(--faint);letter-spacing:.06em}
+.dayfoot .grow{flex:1}
+.dayfoot .dh-cost{font-size:18px}
+@media (max-width:900px){.dayfoot .dh-cost{font-size:15px}}
 .daynote-row{padding:9px 14px;border-top:1px dashed var(--line)}
 .adddaynote{background:none;border:1px dashed var(--line2);border-radius:7px;color:var(--faint);font-size:var(--fs-2);font-weight:600;padding:6px 12px}
 .adddaynote:hover{color:var(--note);border-color:var(--warn-line)}
@@ -1131,6 +1248,20 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 .reqfeat input{accent-color:var(--hv)}
 .reqchars{margin-bottom:6px}
 
+/* ---- cross-department provenance on the stunt requirement ----
+   Crowd and Stunts edit the same stunt list, so a line the OTHER department
+   asked for says so in words. Never colour on its own: the tag carries the
+   department's name, and the tint on the chip is only a second cue. */
+.viatag{display:inline-flex;align-items:center;font-family:var(--cond);font-size:9.5px;
+  letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:999px;
+  border:1px solid var(--line2);color:var(--sub);white-space:nowrap;margin-left:6px}
+.viatag.via-crowd{border-color:var(--hv-line);color:var(--hv)}
+.viatag.via-stunt{border-color:var(--warn-line);color:var(--warn-strong)}
+.person.via-crowd,.code.via-crowd{border-color:var(--hv-line);color:var(--hv)}
+.person.via-stunt,.code.via-stunt{border-color:var(--warn-line);color:var(--warn-strong)}
+.code .viatag{margin-left:4px;padding:1px 4px;font-size:8.5px}
+.rqname .viatag{vertical-align:middle}
+
 /* ---- pre-commit review modal (import changes + budget) ---- */
 .rev-sec{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 14px;margin-bottom:10px;background:var(--panel)}
 .rev-sec h4{margin:0 0 7px;font-family:var(--cond);font-size:var(--fs-5);font-weight:600;color:var(--ink);display:flex;align-items:center;gap:8px}
@@ -1503,13 +1634,9 @@ body.pdf-docked .dh-top button,body.pdf-docked .dh-top a,body.pdf-docked .dh-top
 .ps-htext{flex:1;min-width:0}
 .ps-hwho{flex:none;font-family:var(--mono);font-size:var(--fs-1);color:var(--faint);white-space:nowrap}
 /* per-production column visibility + widths on the day board */
-.colhead,.strip{grid-template-columns:5px var(--w-scene,84px) 46px minmax(0,1fr) var(--w-cast,138px) var(--w-stunt,158px) var(--w-crowd,92px) 34px}
+.colhead,.strip{grid-template-columns:5px var(--w-scene,84px) 46px minmax(0,1fr) var(--w-cast,138px) var(--w-req,560px) 34px}
 .cols-nocast{--w-cast:0px}
-.cols-nostunts{--w-stunt:0px}
-.cols-nocrowd{--w-crowd:0px}
 .cols-nocast .colhead>:nth-child(5),.cols-nocast .strip>:nth-child(5){display:none}
-.cols-nostunts .colhead>:nth-child(6),.cols-nostunts .strip>:nth-child(6){display:none}
-.cols-nocrowd .colhead>:nth-child(7),.cols-nocrowd .strip>:nth-child(7){display:none}
 /* drag-to-resize grips sit on each header column's right edge */
 .colhead div{position:relative}
 .colgrip{position:absolute;top:1px;bottom:1px;width:11px;cursor:col-resize;z-index:5;display:flex;justify-content:center;align-items:stretch}
@@ -1891,7 +2018,7 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .code.cr.anon.click:hover{background:var(--warn);border-color:var(--warn)!important;color:var(--panel)}
 .code.named.click{border:1px solid transparent!important;background:var(--crowd-dim);color:var(--crowd)}
 .code.feat.named.click{background:var(--notebg);color:var(--note)}
-.code.spact.named.click{background:rgba(183,138,255,.12);color:#9a6cd8}
+.code.spact.named.click{background:var(--spact-dim);color:var(--spact)}
 .code.named.click:hover{border-color:var(--crowd)!important;background:var(--crowd);color:#fff}
 /* a crowd chip whose "name" is still just a category label — SA, Extra, SPACT,
    Stunt, Background artist… These stand out as work-to-do (dashed amber, italic)
@@ -2030,7 +2157,12 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
    DEFAULTS here (the per-production width vars still override, and a hidden
    column is still 0px). ============================================================ */
 @media (min-width:901px) and (max-width:1150px){
-  .colhead,.strip{grid-template-columns:5px var(--w-scene,72px) 40px minmax(0,1fr) var(--w-cast,100px) var(--w-stunt,112px) var(--w-crowd,74px) 30px}
+  .colhead,.strip{grid-template-columns:5px var(--w-scene,72px) 40px minmax(0,1fr) var(--w-cast,100px) var(--w-req,420px) 30px}
+  .rqc{padding:5px 6px;min-height:26px}
+  /* the split columns need less room here than they do on a full-width board,
+     or the day card clips what it cannot fit */
+  .cols-featsplit,.cols-spactsplit{--w-req:540px}
+  .cols-featsplit.cols-spactsplit{--w-req:640px}
   .colhead div,.strip>div{padding-left:8px;padding-right:8px}
 }
 

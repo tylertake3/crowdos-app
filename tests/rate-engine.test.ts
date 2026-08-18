@@ -318,4 +318,32 @@ describe("Production base-day budget assumptions (unedited days)", () => {
     const withoutBase = computeCrowdCosts(model(), { "Main|1": cfg }).grand;
     expect(withBase).toBe(withoutBase);
   });
+
+  it("baseMeals adds an assumed meal penalty per head to a flat unedited day", () => {
+    const flat = computeCrowdCosts(model()).grand;
+    const withMeal = computeCrowdCosts(
+      model(), {}, { ...CROWD_DEFAULTS, baseMeals: { short: true } }
+    ).grand;
+    // short lunch = £23.38/head at the day rate, on all 10 SA heads
+    expect(Math.round((withMeal - flat) * 100)).toBe(Math.round(10 * 23.38 * 100));
+  });
+
+  it("baseMeals stacks two penalties and applies alongside a framework baseDay", () => {
+    const based = computeCrowdCosts(
+      model(), {}, { ...CROWD_DEFAULTS, baseDay: { fw: "cwd", otHours: 2 } }
+    ).grand;
+    const withMeals = computeCrowdCosts(
+      model(), {}, { ...CROWD_DEFAULTS, baseDay: { fw: "cwd", otHours: 2 }, baseMeals: { short: true, late: true } }
+    ).grand;
+    // short + late lunch = 2 × £23.38/head across 10 heads, on top of the CWD day
+    expect(Math.round((withMeals - based) * 100)).toBe(Math.round(10 * (23.38 + 23.38) * 100));
+  });
+
+  it("an edited day ignores the base meal assumption", () => {
+    const cfg: CrowdDayConfig = { shift: "Day", fw: "std", ph: false, call: "07:00", wrap: "16:00", travel: "A",
+      chars: [{ name: "", count: 10, tier: "SA" }] };
+    const withMeal = computeCrowdCosts(model(), { "Main|1": cfg }, { ...CROWD_DEFAULTS, baseMeals: { short: true } }).grand;
+    const withoutMeal = computeCrowdCosts(model(), { "Main|1": cfg }).grand;
+    expect(withMeal).toBe(withoutMeal);
+  });
 });

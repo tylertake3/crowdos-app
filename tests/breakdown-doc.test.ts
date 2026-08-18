@@ -4,6 +4,7 @@ import {
   cbToSheet,
   cbToStyledSheet,
   cbSceneLines,
+  cbSplitScene,
   cbUnitLabel,
   cbDayLabel,
   CB_COLUMNS,
@@ -62,6 +63,48 @@ describe("crowd breakdown document", () => {
       "NO.",
       "STUNTS/OTHER",
     ]);
+  });
+
+  it("gives featured background and spacts their own columns when asked", () => {
+    const sc = scene({
+      num: "12",
+      sa: 30,
+      saChars: [{ name: "Wedding guests", count: 20 }],
+      featured: [{ name: "Harpist", count: 1 }],
+      spacts: [{ name: "Gillet friends", count: 2 }],
+    } as Partial<Scene>);
+    const m = model([day({ scenes: [sc] })]);
+
+    // off by default — nothing about the existing document moves
+    const plain = projectCrowdDoc(m, {});
+    expect(plain.columns).not.toContain("FEATURED");
+    expect(plain.columns).not.toContain("SPACTS");
+
+    const split = projectCrowdDoc(m, { splitFeatured: true, splitSpacts: true });
+    expect(split.columns).toContain("FEATURED");
+    expect(split.columns).toContain("SPACTS");
+
+    const only = split.rows.find((r) => r.kind === "scene") as CbScene;
+    const dealt = cbSplitScene(only, split.layout);
+    expect(dealt.featured.map((l) => l.name)).toEqual(["Harpist"]);
+    expect(dealt.spacts.map((l) => l.name)).toEqual(["Gillet friends"]);
+    // the plain background stays where it was, and nothing is printed twice
+    expect(dealt.main.some((l) => l.name === "Harpist")).toBe(false);
+    expect(dealt.main.length + dealt.featured.length + dealt.spacts.length).toBe(only.crowd.length);
+
+    // the day still books everyone — splitting is a layout choice, not a count
+    expect(split.totals.crowd).toBe(plain.totals.crowd);
+
+    // and the spreadsheet prints them in their own columns
+    const sheet = cbToSheet(split);
+    const head = sheet.rows[3];
+    const fi = head.indexOf("FEATURED");
+    const si = head.indexOf("SPACTS");
+    expect(fi).toBeGreaterThan(-1);
+    expect(si).toBeGreaterThan(-1);
+    const body = sheet.rows.slice(4);
+    expect(body.some((r) => r[fi] === "Harpist")).toBe(true);
+    expect(body.some((r) => r[si] === "Gillet friends")).toBe(true);
   });
 
   it("labels the day and unit bands the way the documents print them", () => {
@@ -1145,5 +1188,65 @@ describe("crowd breakdown document", () => {
       const cells = cbToSheet(doc).rows.flat().map((c) => String(c ?? ""));
       expect(cells.some((c) => /not yet assessed/i.test(c))).toBe(false);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two departments, one stunt list.
+//
+// A Crowd AD sits with the 1st AD and settles that a day needs six stunt
+// drivers; the stunt coordinator signs in on the stunt side, sees that ask,
+// and prices it. For that to work the requirement row has to remember WHICH
+// department put it there, and that stamp has to survive the projection both
+// areas draw from — otherwise each side sees a list with no idea whose it is.
+// ---------------------------------------------------------------------------
+describe("cross-department stunt provenance", () => {
+  it("carries the department stamp onto the STUNTS / OTHER line", () => {
+    const sc = scene({
+      num: "12",
+      extras: [
+        { name: "Stunt drivers", count: 6, by: "crowd" },
+        { name: "Fight doubles", count: 2, by: "stunt" },
+      ],
+    });
+    const { other } = cbSceneLines(sc);
+    expect(other.map((l) => [l.name, l.no, l.by])).toEqual([
+      ["Stunt drivers", 6, "crowd"],
+      ["Fight doubles", 2, "stunt"],
+    ]);
+  });
+
+  it("leaves the stamp absent on rows nobody stamped, and never on crowd rows", () => {
+    // An unstamped row must stay unstamped: guessing a department would put a
+    // claim on the page ("Crowd asked for this") that nobody actually made.
+    const sc = scene({
+      sa: 40,
+      saChars: [{ name: "Commuters", count: 40 }],
+      extras: [{ name: "High fall", count: 1 }],
+    });
+    const { crowd, other } = cbSceneLines(sc);
+    expect(other[0].by).toBeUndefined();
+    for (const l of crowd) expect(l.by).toBeUndefined();
+  });
+
+  it("keeps the stamp out of the pooling identity", () => {
+    // The same named group asked for by both sides is still ONE group of
+    // people. If `by` leaked into the key the day would book them twice.
+    const a = cbSceneLines(scene({ num: "1", extras: [{ name: "Stunt drivers", count: 6, by: "crowd" }] }));
+    const b = cbSceneLines(scene({ num: "2", extras: [{ name: "Stunt drivers", count: 6, by: "stunt" }] }));
+    expect(a.other[0].key).toBe(b.other[0].key);
+  });
+
+  it("still keeps stunt lines out of the crowd budget", () => {
+    // Provenance is display only. A row the Crowd department typed is still a
+    // stunt row: it prints in STUNTS / OTHER, as a reference line, uncosted by
+    // the crowd engine — a Crowd AD can say who, never what they cost.
+    const { crowd, other } = cbSceneLines(
+      scene({ sa: 10, extras: [{ name: "Stunt drivers", count: 6, by: "crowd" }] }),
+    );
+    expect(crowd.some((l) => /stunt/i.test(l.name))).toBe(false);
+    expect(other[0].reference).toBe(true);
+    expect(other[0].tier).toBe("Stunt");
+    expect(other[0].cost).toBe(0);
   });
 });

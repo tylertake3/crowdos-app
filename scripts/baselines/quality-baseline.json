@@ -11,10 +11,10 @@
   "checks": {
     "typecheck-js": {
       "counts": {
-        "errors": 413
+        "errors": 410
       },
       "command": "npm run typecheck:js",
-      "recorded": "2026-08-17"
+      "recorded": "2026-08-18"
     },
     "eslint": {
       "counts": {
