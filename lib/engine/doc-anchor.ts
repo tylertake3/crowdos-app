@@ -20,6 +20,17 @@
 //
 // A banner may also cover a range ("Shoot Day # 2 - 3 Tue., Jul. 1 - Wed.,
 // Jul. 2"), in which case both days point at it.
+//
+// Ruled-table documents (the crowd breakdown especially) put the same banner in
+// the MIDDLE of a header row, because the row is laid out as columns:
+//
+//   Wednesday 9 September 2026   SHOOT DAY 3   HERTFORDSHIRE COUNTRY CLUB
+//
+// So a second rule: the words "SHOOT DAY <n>" together are a banner wherever
+// they appear on the line. "Shoot day" is never how a scene row writes its
+// day/night marker, so this cannot pick up a page-eighths token.
+
+import { parseDayDateFull } from "./model";
 
 export interface AnchorLine {
   text: string;
@@ -29,18 +40,30 @@ export interface AnchorLine {
 // leading dashes/asterisks/space, optional "Shoot", "Day", optional "#",
 // the number, and optionally "- <number>" for a combined day
 const BANNER_RX = /^[-–—\s*]*(?:shoot\s+)?day\s*#?\s*(\d+)\s*(?:[-–—]\s*(\d+))?\b/i;
+// the same banner sitting in a column part-way along a header row — only ever
+// with the word "shoot" in front, which a scene row never has
+const MID_BANNER_RX = /(?:^|[^a-z])shoot\s+day\s*#?\s*(\d+)\s*(?:[-–—]\s*(\d+))?\b/i;
 const END_RX = /^[-–—\s*]*end\b/i;
+// a header row usually opens with the weekday
+const WEEKDAY_RX = /^[-–—\s*]*(?:mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)/i;
+
+/** The shoot-day span a banner line opens, or null when it isn't a banner. */
+function bannerSpan(text: string): { lo: number; hi: number } | null {
+  if (END_RX.test(text)) return null;
+  const m = text.match(BANNER_RX) || text.match(MID_BANNER_RX);
+  if (!m) return null;
+  const a = +m[1];
+  const b = m[2] ? +m[2] : a;
+  // "2 - 3" is a range; "12 - 8th May" is a trailing date, not a range
+  return { lo: a, hi: b >= a && b - a < 20 ? b : a };
+}
 
 /** True when `text` is a day banner opening shoot day `num`. */
 export function isDayBanner(text: string, num?: number): boolean {
-  if (END_RX.test(text)) return false;
-  const m = text.match(BANNER_RX);
-  if (!m) return false;
+  const span = bannerSpan(text);
+  if (!span) return false;
   if (num == null) return true;
-  const a = +m[1];
-  const b = m[2] ? +m[2] : a;
-  const hi = b >= a && b - a < 20 ? b : a; // "2 - 3" is a range; "12 - 8th" is not
-  return num >= a && num <= hi;
+  return num >= span.lo && num <= span.hi;
 }
 
 /**
@@ -50,13 +73,43 @@ export function isDayBanner(text: string, num?: number): boolean {
 export function dayBannerIndex<T extends AnchorLine>(lines: T[]): Map<number, T> {
   const map = new Map<number, T>();
   for (const ln of lines) {
-    if (END_RX.test(ln.text)) continue;
-    const m = ln.text.match(BANNER_RX);
-    if (!m) continue;
-    const a = +m[1];
-    const b = m[2] ? +m[2] : a;
-    const hi = b >= a && b - a < 20 ? b : a;
-    for (let n = a; n <= hi; n++) if (!map.has(n)) map.set(n, ln);
+    const span = bannerSpan(ln.text);
+    if (!span) continue;
+    for (let n = span.lo; n <= span.hi; n++) if (!map.has(n)) map.set(n, ln);
   }
   return map;
+}
+
+/**
+ * Find the line that carries a given calendar DATE — the anchor of last resort
+ * when a document numbers its days differently from the board (or not at all).
+ *
+ * Matching on the date's own wording is hopeless: the board holds "10 Sep 2026"
+ * and the document prints "Thursday 10 September 2026". So every line is parsed
+ * as a date and compared as a date. A header row (one that opens with a weekday,
+ * or carries a shoot-day banner) beats a body row, and the shortest line beats a
+ * long one — the same "tightest match" rule the text search uses.
+ *
+ * `dateText` is the day's date exactly as the board holds it.
+ */
+export function findDateLine<T extends AnchorLine>(lines: T[], dateText: string): T | null {
+  const want = parseDayDateFull({ date: String(dateText || "") });
+  if (!want) return null;
+  const wantKey = want.date.getFullYear() + "-" + want.date.getMonth() + "-" + want.date.getDate();
+  let best: { score: number; line: T } | null = null;
+  for (const ln of lines) {
+    const text = ln.text || "";
+    if (END_RX.test(text)) continue;
+    // anchor an undated line to the year we're looking for, so "10 September"
+    // and "10 September 2026" both compare equal
+    const got = parseDayDateFull({ date: text }, { year: want.date.getFullYear() });
+    if (!got) continue;
+    if (got.date.getFullYear() + "-" + got.date.getMonth() + "-" + got.date.getDate() !== wantKey)
+      continue;
+    let score = text.length / 100;
+    if (WEEKDAY_RX.test(text)) score -= 100;
+    if (bannerSpan(text)) score -= 100;
+    if (!best || score < best.score) best = { score, line: ln };
+  }
+  return best && best.line;
 }

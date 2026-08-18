@@ -658,6 +658,37 @@ td .daylist{display:flex;gap:4px;flex-wrap:wrap}
 /* The one filled, obviously-primary button in the import dialog. */
 .tb-btn.primary-action{background:var(--hv);border-color:var(--hv);color:var(--hvink);font-weight:700}
 .tb-btn.primary-action:hover{background:var(--hv2);border-color:var(--hv2);color:var(--hvink)}
+/* ---------------------------------------------------------------------------
+   DOCKED PANEL (the crowd calculator).
+
+   Pricing a day means reading the day at the same time — which a dialog laid
+   over the board makes impossible. So this one docks down the right-hand side:
+   no dark backdrop, no blur, the board keeps its own scroll and stays clickable,
+   and `body.cdock` gives the board column room so nothing hides underneath.
+   Below 900px there isn't room to sit beside anything, so it becomes a normal
+   full-width sheet again.
+   --------------------------------------------------------------------------- */
+:root{--dockw:clamp(430px,46vw,700px)} /* the docked panel's width, shared with the board's margin */
+.modal.dockpanel{background:none;backdrop-filter:none;inset:0 0 0 auto;width:var(--dockw);
+  display:none;place-items:stretch;padding:0;z-index:70}
+.modal.dockpanel.open{display:grid}
+.modal.dockpanel .box{max-width:none;width:100%;max-height:none;height:100vh;border-radius:0;
+  border-width:0 0 0 1px;display:flex;flex-direction:column;box-shadow:-18px 0 44px rgba(0,0,0,.28)}
+.modal.dockpanel .mhead{position:sticky;top:0;background:var(--panel);z-index:2;flex-wrap:wrap;gap:6px 10px}
+.modal.dockpanel .mhead h3{flex:1 1 100%;font-size:19px}
+.modal.dockpanel .mhead .sub{flex:1 1 100%;order:2}
+.modal.dockpanel .mhead .x{order:3}
+.modal.dockpanel #cdBody{flex:1;overflow:auto}
+/* The room is made on the LAYOUT, not on the board column alone: the docked
+   original-PDF panel is a sibling of the board, so shrinking only the board left
+   the calculator sitting on top of the PDF — the two panels an AD is most likely
+   to want open together. Padding the layout moves both out of the way. */
+body.cdock .layout{padding-right:var(--dockw)}
+@media (max-width:900px){
+  .modal.dockpanel{inset:0;width:100vw;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);place-items:center}
+  .modal.dockpanel .box{height:auto;max-height:92vh;border-width:1px;border-radius:var(--r-xl);width:97%}
+  body.cdock .layout{padding-right:0}
+}
 /* crowd day calculator */
 #cdBody{padding:14px 18px}
 .cdsec{margin-bottom:14px}
@@ -683,23 +714,83 @@ td .daylist{display:flex;gap:4px;flex-wrap:wrap}
 /* Characters list as individually-boxed rows, not table lines — each character
    its own visibly-divided card instead of a cramped table row. */
 .charboxwrap{display:flex;flex-direction:column;gap:7px}
-.charbox{display:grid;grid-template-columns:minmax(96px,1.6fr) minmax(56px,.9fr) 48px minmax(78px,1fr) minmax(96px,1.5fr) 72px 84px 26px 26px;gap:7px;align-items:center;
+/* One character = one card holding its fields AND (when open) its own times.
+   The times used to be a grid child of the fields row, which is what made this
+   section fall apart as soon as an override was set: the row spanned columns it
+   did not own and the money drifted out of its column. */
+.charcard{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-md);padding:8px 10px}
+.charcard.picked{border-color:var(--hv-line);box-shadow:inset 3px 0 0 var(--hv)}
+.charcard>.charbox{background:none;border:none;border-radius:0;padding:0}
+.charbox{display:grid;grid-template-columns:22px minmax(96px,1.6fr) minmax(56px,.9fr) 48px minmax(78px,1fr) minmax(96px,1.5fr) 72px 84px 26px 26px;gap:7px;align-items:center;
   background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-md);padding:8px 10px}
+/* A bare checkbox, deliberately NOT wrapped in a <label>: a click on an input
+   inside its own label can be dispatched twice, which ticked and immediately
+   un-ticked the character. */
+.charbox input.charpick{accent-color:var(--hv);width:15px;height:15px;padding:0;
+  justify-self:center;cursor:pointer;background:none;border:none}
+/* the bulk-times bar: select characters, drag once, apply to all of them */
+.cdbulk{background:var(--panel2);border:1px solid var(--hv-line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:9px}
+.cdbulk.idle{border-color:var(--line2);border-style:dashed;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.cdbulk-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+.cdbulk-head b{font-size:var(--fs-4);color:var(--hv)}
+.cdbulk-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.cdbulk-btn{border-radius:8px;padding:7px 12px;font-size:var(--fs-3);font-weight:700;border:1px solid var(--line2);
+  background:var(--panel);color:var(--ink);cursor:pointer}
+.cdbulk-btn.go{background:var(--hv);border-color:var(--hv);color:var(--hvink)}
+.cdbulk-btn.ghost{background:none;color:var(--sub);font-weight:600}
+.cdbulk-btn.ghost:hover{color:var(--hv);border-color:var(--hv)}
+/* day-level additional payments */
+.xfeewrap{display:flex;flex-direction:column;gap:7px}
+.xfeerow{display:grid;grid-template-columns:minmax(120px,2fr) 92px 12px 72px 46px 90px 26px;gap:7px;align-items:center;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-md);padding:8px 10px}
+.xfeerow input,.xfeerow select{background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--ink);
+  padding:6px 8px;font-family:var(--mono);font-size:var(--fs-4);width:100%}
+.xfeerow .xfeex,.xfeerow .xfeeheads{font-size:var(--fs-2);color:var(--faint);text-align:center}
+.xfeerow .xfeesub{text-align:right;font-family:var(--mono);color:var(--money)}
+.xfeerow .del{background:none;border:none;color:var(--faint);font-size:14px;padding:4px 6px;justify-self:center}
+.xfeerow .del:hover{color:var(--danger)}
+.xfeeempty{font-size:var(--fs-3);color:var(--faint);padding:10px 12px;border:1px dashed var(--line2);border-radius:var(--r-md)}
+@media (max-width:820px){.xfeerow{grid-template-columns:1fr 1fr;grid-auto-rows:auto}}
 .charbox input,.charbox select{background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--ink);
   padding:6px 8px;font-family:var(--mono);font-size:var(--fs-4);width:100%}
 .charbox .num{text-align:right;font-family:var(--mono)}
 .charbox .del{justify-self:center}
 .charboxhead{background:none;border:none;padding:0 10px;font-size:var(--fs-2);font-weight:500;color:var(--faint)}
 @media (max-width:820px){.charbox{grid-template-columns:1fr 1fr;grid-auto-rows:auto}.charboxhead{display:none}}
+/* Inside the docked panel there is no room for ten columns, and squeezing them
+   is what made this section unreadable — the money ended up in 40px of space.
+   Each character becomes three short lines instead: who and how many, then how
+   they are paid, then what they cost. */
+@media (min-width:901px){
+  .modal.dockpanel .charboxhead{display:none}
+  .modal.dockpanel .charbox{grid-template-columns:20px minmax(90px,1.6fr) 60px 48px 26px 26px;gap:6px 7px}
+  .modal.dockpanel .charbox>.charpick{grid-area:1/1/4/2;align-self:start;margin-top:7px}
+  .modal.dockpanel .charbox>*:nth-child(2){grid-area:1/2/2/3}
+  .modal.dockpanel .charbox>*:nth-child(3){grid-area:1/3/2/4}
+  .modal.dockpanel .charbox>*:nth-child(4){grid-area:1/4/2/5}
+  .modal.dockpanel .charbox>*:nth-child(5){grid-area:2/2/3/3}
+  .modal.dockpanel .charbox>*:nth-child(6){grid-area:2/3/3/7}
+  .modal.dockpanel .charbox>*:nth-child(7){grid-area:3/2/4/3;text-align:left}
+  .modal.dockpanel .charbox>*:nth-child(8){grid-area:3/3/4/7}
+  .modal.dockpanel .charbox>*:nth-child(9){grid-area:1/5/2/6}
+  .modal.dockpanel .charbox>*:nth-child(10){grid-area:1/6/2/7}
+  /* the column headings are gone, so the two money figures say what they are */
+  .modal.dockpanel .charbox .num .sr-only{position:static!important;width:auto;height:auto;
+    margin:0;padding:0;clip:auto;clip-path:none;white-space:normal;
+    font-family:var(--body);font-size:var(--fs-1);color:var(--faint);font-weight:600}
+}
 /* per-character call/wrap override — zombies at 04:00 vs civilians at 08:00 */
 .charbox-time{justify-self:center;background:none;border:1px solid var(--line2);border-radius:var(--r-xl);color:var(--faint);
   font-size:var(--fs-1);font-family:var(--mono);padding:3px 7px;white-space:nowrap}
 .charbox-time.on{background:var(--notebg);border-color:var(--warn-line);color:var(--note)}
-.charbox-timerow{grid-column:1/-1;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
-  background:var(--panel);border:1px dashed var(--line2);border-radius:8px;padding:8px 10px;margin-top:2px}
+.charbox-timerow{background:var(--panel);border:1px dashed var(--line2);border-radius:8px;padding:10px 12px 4px;margin-top:8px}
+.charbox-timerow .ctr-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+.charbox-timerow .ctr-head b{font-family:var(--mono);font-size:var(--fs-4);color:var(--hv)}
 .charbox-timerow label{font-size:var(--fs-1);font-weight:800;color:var(--faint);
   display:flex;align-items:center;gap:6px}
-.charbox-timerow input[type=time]{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);
+/* Not the slider's own time pills — those are handles, styled with every other
+   slider on the page, and this rule would repaint only these two. */
+.charbox-timerow input[type=time]:not(.handle-lbl){background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);
   color:var(--ink);padding:5px 8px;font-family:var(--mono);font-size:var(--fs-4);text-transform:none;font-weight:400;letter-spacing:normal}
 .charbox-timerow .del{background:none;border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--faint);
   font-size:var(--fs-1);padding:4px 9px;text-transform:none;font-weight:600;letter-spacing:normal}
@@ -1364,8 +1455,13 @@ body:not(.light) .t3wordmark{filter:invert(1)}
 body.pdf-docked .board-pdf,body.pdf-docked .board-pdf-divider{display:flex}
 .board-pdf .bp-bar{gap:8px}
 .board-pdf .bp-title{font-family:var(--cond);font-size:var(--fs-5);font-weight:600;color:var(--ink);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}
-.board-pdf .rpv-tabs{flex:0 1 auto}
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
+/* The document tabs are how you switch between the schedule and the crowd
+   breakdown, so they must never be the thing that gets squeezed out of the bar:
+   the title truncates first, and the tabs scroll sideways if there are many. */
+.board-pdf .rpv-tabs{flex:1 1 auto;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;-ms-overflow-style:none}
+.board-pdf .rpv-tabs::-webkit-scrollbar{display:none}
 .board-pdf .bp-close{color:var(--sub)}
 .board-pdf .bp-close:hover{color:var(--danger);border-color:var(--hv-line)}
 .board-pdf .rpv-pages{background:var(--bg)}

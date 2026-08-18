@@ -461,12 +461,17 @@ describe("a scene that says “as above” instead of listing its crowd", () => 
     expect(d.scenes[1].saChars).toEqual([{ name: "Mechanic", count: 1 }]);
   });
 
-  it("keeps the AD’s shorthand on the printed page, then gives it up for a new group", () => {
+  it("names the carried groups instead of printing a bare pointer", () => {
     const carried: Scene = {
       num: "24", contFrom: "23", sa: 0,
       saChars: [{ name: "Wedding Guests", count: 60, flags: ["asAbove"] }],
     } as Scene;
-    expect(cbSceneLines(carried).crowd.map((l) => l.name)).toEqual(["AS SCENE 23 (FROM ABOVE)"]);
+    // "AS SCENE 23 (FROM ABOVE)" names nobody — the row says who, marked carried
+    expect(cbSceneLines(carried).crowd.map((l) => l.name)).toEqual(["Wedding Guests"]);
+    expect(cbSceneLines(carried).crowd[0].fromAbove).toBe(true);
+    // only a pointer we could NOT resolve still prints as itself
+    const unresolved: Scene = { num: "76", contFrom: "1", sa: 0 } as Scene;
+    expect(cbSceneLines(unresolved).crowd.map((l) => l.name)).toEqual(["AS SCENE 1 (FROM ABOVE)"]);
     const mixed: Scene = {
       ...carried,
       saChars: [...carried.saChars!, { name: "Mechanic", count: 1 }],

@@ -241,6 +241,51 @@ export function effectiveTier(
   return best;
 }
 
+/**
+ * How many SA heads the SCHEDULE asks of a day — the requirement, independent of
+ * anything typed into the day calculator.
+ *
+ * This is the number the calculator's reconcile line measures its own character
+ * rows against, so it has to be counted by EXACTLY the rules the costing engine
+ * counts a day's SA by (see the per-day loop below), or the two disagree and
+ * neither can be trusted:
+ *  · weather-cover scenes are deliberately double-scheduled and are not extra
+ *    people;
+ *  · a row that isn't a costable person (dummy, dog, child, action vehicle,
+ *    stunt, or carried for reference only) is not an SA;
+ *  · a group engaged on a named ROLE is that role, not an SA;
+ *  · a named group is pooled on its name across the day (the same 10 office
+ *    workers in three scenes are 10 people, not 30) and added to the anonymous
+ *    "N x C" peak.
+ */
+export function daySaRequirement(d: ShootDay, s: CrowdSettings = CROWD_DEFAULTS): number {
+  if (!d || !d.scenes) return 0;
+  // the anonymous peak is taken exactly as the costing loop takes it, so the
+  // requirement and the day's costed SA figure can never disagree
+  const anon = dayPeakSA(d);
+  const named: Record<string, number> = {};
+  // Every crowd list is read, on the same fallback tiers the costing loop uses,
+  // because the tier a row is PRICED on is not always the list it arrived in: a
+  // row filed under "featured" that states tier SA is costed as an SA, and the
+  // requirement has to say so too or the reconcile line disagrees with the
+  // figure on the day board.
+  const take = (f: NamedCount, fallback: CrowdTier) => {
+    if (!f || !f.name) return;
+    if (!costableReq(f)) return;
+    const rid = (f.roleId || "").trim();
+    if (rid && findRole(s.roles, rid)) return; // priced as that role, not SA
+    if (effectiveTier(f, fallback, s) !== "SA") return;
+    named[f.name] = Math.max(named[f.name] || 0, +f.count || 0);
+  };
+  for (const sc of d.scenes) {
+    if (sc.status === "weatherCover") continue;
+    for (const f of sc.saChars || []) take(f, "SA");
+    for (const f of sc.featured || []) take(f, "Featured");
+    for (const f of sc.spacts || []) take(f, "SPACT");
+  }
+  return anon + Object.values(named).reduce((a, n) => a + n, 0);
+}
+
 // The single per-head entry point — dispatches to the right rate card.
 export function cdPerHead(
   c: CrowdDayConfig,
@@ -291,6 +336,13 @@ export interface DayCost {
   spactCost: number;
   /** supplementary fees inside the day's cost (heads × per-head fee) */
   supCost: number;
+  /**
+   * Day-level supplementary fees (CrowdDayConfig.extras) — budgeted as "N heads
+   * on this fee" rather than against one character row. Inside `artistCost`, so
+   * the uplift stack charges on them exactly as it does a per-character fee.
+   * Zero on every day that has none, which is the default.
+   */
+  extraCost: number;
   /** the same fees split by tier, so each card can show what it charged */
   supSA: number;
   supFeat: number;
@@ -401,13 +453,19 @@ export function cdDayCost(
   const heads = sa + featPD + spactPD + roleHeads;
   const meals = mealPenaltyPerHead(c.meals, c.shift, s.meals, !!c.ph);
   const mealCost = money(meals.per, heads);
-  const artistCost = sumMoney(round2(cost), mealCost);
+  // Day-level fees: "20 heads on a Cat D fee" is real artist money the day
+  // owes, so it sits in the same base the uplifts charge on.
+  const extraCost = sumMoney(
+    ...(c.extras || []).map((x) => money(round2(+x.amt || 0), Math.max(0, +x.count || 0)))
+  );
+  const artistCost = sumMoney(round2(cost), mealCost, extraCost);
   const uplift = computeUplift(artistCost, s.uplift);
   return {
     cost: uplift.grand, artistCost, mealCost, meals, uplift,
     sa, featPD, spactPD, feats, spacts,
     saCost: round2(saCost), featCost: round2(featCost), spactCost: round2(spactCost),
-    supCost: round2(supCost), supSA: round2(supSA),
+    supCost: round2(supCost), extraCost,
+    supSA: round2(supSA),
     supFeat: round2(supFeat), supSpact: round2(supSpact),
     roleHeads, roleCost: round2(roleCost), supRole: round2(supRole), roles,
     missingRoles: [...missing].sort(),
@@ -763,7 +821,9 @@ export function computeCrowdCosts(
       // auto-PH is switched on. `c` itself is never mutated.
       const cEff = phInfo.applied === !!c.ph ? c : { ...c, ph: phInfo.applied };
       const r = cdDayCost(cEff, s);
-      if (!r.sa && !r.featPD && !r.spactPD && !r.roleHeads) continue;
+      // A day with nobody on it costs nothing and is skipped — unless it owes
+      // day-level payments, which are real money the schedule must still show.
+      if (!r.sa && !r.featPD && !r.spactPD && !r.roleHeads && !r.extraCost) continue;
       const tAmt =
         c.travel === "A" ? s.pact.travelA : c.travel === "B" ? s.pact.travelB : 0;
       const headsE = r.heads;
@@ -838,7 +898,7 @@ export function computeCrowdCosts(
         cost: uplift.grand,
         artistCost, mealCost, meals, uplift,
         saCost, featCost, spactCost,
-        supCost: supTotal, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
+        supCost: supTotal, extraCost: 0, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
         roleHeads: rolePD, roleCost, supRole: roleSupTotal, roles,
         missingRoles: [...dayMissing].sort(), heads,
         perHeadBy: { SA: saP.per, Featured: saP.per, SPACT: spP.per },
@@ -899,7 +959,7 @@ export function computeCrowdCosts(
         cost: uplift.grand,
         artistCost, mealCost, meals, uplift,
         saCost, featCost, spactCost,
-        supCost: supTotal, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
+        supCost: supTotal, extraCost: 0, supSA: saSup, supFeat: featSup, supSpact: spactSup, supBy,
         roleHeads: rolePD, roleCost, supRole: roleSupTotal, roles,
         missingRoles: [...dayMissing].sort(), heads,
         perHeadBy: {
