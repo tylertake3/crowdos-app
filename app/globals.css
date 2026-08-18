@@ -1603,6 +1603,19 @@ body.pdf-docked .dh-top button,body.pdf-docked .dh-top a,body.pdf-docked .dh-top
 
 /* ---- casting briefs (Laural Briefs styling) ---- */
 .briefcallout{background:var(--notebg);border:1px dashed var(--warn-line);border-radius:var(--r);padding:12px 16px;margin-bottom:14px;font-size:var(--fs-4);color:var(--note)}
+/* Read-mode pair on the import dialog: which reader read this schedule, stated
+   as a choice rather than buried in the status line. The lit one (.tb-btn.on)
+   is the reading currently in force; clicking the other re-reads the same
+   stored text with that reader. */
+.imp-read{margin-top:16px;padding:11px 13px;border-radius:var(--r);
+  background:var(--panel2);border:1px solid var(--line);
+  display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.imp-read-lab{color:var(--sub);font-size:var(--fs-4);font-weight:600;margin-right:auto}
+.imp-read-btns{display:flex;gap:7px}
+.imp-read-note{flex-basis:100%;color:var(--faint);font-size:11px;line-height:1.5}
+.imp-read-note:empty{display:none}
+.imp-read-btn[disabled]{cursor:not-allowed}
+
 /* "this is only part of the schedule" — sits under the imported-days line in
    the import dialog, where it contradicts it. Deliberately louder than a hint:
    a partial read that reads as a complete one is a budget built on a third of
@@ -1901,6 +1914,24 @@ body:not(.light) .gposter{filter:brightness(.35) saturate(.6)}
 .crgrp:hover .crmenu{opacity:.9}
 /* a crowd cell lit up as a drop target while dragging a group */
 .reqcell.drop-ok{outline:2px dashed var(--crowd);outline-offset:-3px;background:var(--crowd-dim)!important}
+
+/* groups picked out for a batch move / copy / delete. The ring has to read as
+   "picked", not "highlighted", on chips that are already six different colours,
+   so it is an outline OUTSIDE the chip rather than a background change. */
+.crgrp.crsel{outline:2px solid var(--crowd);outline-offset:1px;box-shadow:0 0 0 4px var(--crowd-dim)}
+/* the batch bar: what is picked, and everything that can be done with it */
+#crSelBar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1350;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;max-width:min(760px,94vw);
+  background:var(--panel);border:1px solid var(--line2);border-radius:999px;
+  padding:9px 13px;box-shadow:0 14px 40px rgba(0,0,0,.42)}
+#crSelBar .crselcount{font-size:var(--fs-5);font-weight:700;color:var(--ink);white-space:nowrap}
+#crSelBar .crselsub{font-size:var(--fs-2);color:var(--sub);white-space:nowrap;margin-right:4px}
+#crSelBar button{border:1px solid var(--line2);border-radius:999px;background:var(--panel2);
+  color:var(--ink);font-size:var(--fs-4);font-weight:600;padding:6px 11px;cursor:pointer;white-space:nowrap}
+#crSelBar button:hover{border-color:var(--crowd);background:var(--crowd-dim)}
+#crSelBar button.danger:hover{border-color:var(--bad-line,#b4443c);background:var(--bad-dim,rgba(180,68,60,.18))}
+#crSelBar button.ghost{background:none;border-color:transparent;color:var(--sub)}
+#crSelBar button.ghost:hover{color:var(--ink);background:var(--panel2)}
 
 /* "same people or new people?" prompt shown when a group is copied elsewhere */
 .samenew-wrap{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;

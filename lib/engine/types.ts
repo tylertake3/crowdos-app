@@ -185,6 +185,12 @@ export interface Scene {
   // by the importer, or the second day silently under-counts.
   contFrom?: string; // resolved scene id/number this scene's list comes from
   contFromRef?: string; // unresolved source text ("(FROM ABOVE)", "(from above - redressed)")
+  // Set by materialiseCarriedCrowd: the rows now on this scene were COPIED from
+  // the scene it points at, every one of them marked `asAbove`, so the scene
+  // shows the crowd it actually has on the floor without booking anybody twice.
+  // The printed breakdown keeps the AD's own shorthand ("AS SCENE 23 (FROM
+  // ABOVE)") rather than reprinting the list — this flag is how it knows to.
+  crowdInherited?: boolean;
   // Explicit "N/A" in a requirement cell, as distinct from an empty cell.
   // 'none'    = the AD has affirmatively stated no crowd — a CLOSED item.
   // 'pending' = nobody has filled it in yet — an OPEN item to chase.

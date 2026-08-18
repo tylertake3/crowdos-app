@@ -749,6 +749,10 @@ export function finishBreakdown(o: {
   const declaredTotals = grandTotals(lines);
   const sourceScheduleDate = sourceSchedule(lines);
 
+  // Before anything reads a scene on its own: give every "as scene 23" scene the
+  // rows it is pointing at (carried, so no day books them twice).
+  const carried = materialiseCarriedCrowd(days);
+
   const mismatches = reconcileDays(days);
   const checked = days.filter((d) => d.declaredTotals).length;
   // WHOSE ARITHMETIC. Said differently for the two readers, because it means
@@ -790,6 +794,11 @@ export function finishBreakdown(o: {
   if (!legend) {
     warnings.push(
       "No colour key was found in this document. Any colour-coded rows — children, doubles, action vehicles — have been imported as ordinary crowd and need checking.",
+    );
+  }
+  if (carried) {
+    warnings.push(
+      `${carried === 1 ? "One scene reads" : `${carried} scenes read`} "as above" instead of listing crowd of its own. Each now shows the crowd of the scene it points at, marked "from above" — the same people, so no day books them twice.`,
     );
   }
   if (unparsed.length) {
@@ -916,6 +925,84 @@ export function bucket(scene: Scene, req: NamedCount) {
   else if (tier === "Child") (scene.children ||= []).push(req);
   else if (tier === "AV") (scene.avs ||= []).push(req);
   else (scene.saChars ||= []).push(req);
+}
+
+// WHAT "AS SCENE 23 (FROM ABOVE)" HAS TO MEAN EVERYWHERE ELSE.
+//
+// A breakdown writes a covering scene's crowd ONCE and points the rest of the
+// set-up at it — "Sc.23, 24, 25" with the rows against 23, or a bare cell
+// reading "As above". On the printed page that is complete: the reader's eye is
+// two lines above the pointer. Anywhere the scene is read on its own it is not:
+// the day board showed Sc.24 and Sc.25 with an empty crowd cell and a figure of
+// zero, on scenes that plainly have sixty wedding guests standing in them.
+//
+// So the pointer is RESOLVED here, once, at the end of the read: every row on
+// the scene it points at is copied onto it and marked `asAbove`. That flag is
+// the whole safety of this — a day's requirement is a peak across its scenes and
+// dayHeads() skips carried rows, so nothing is booked or costed twice; the
+// scene simply now says who is in it. `crowdInherited` records that the rows are
+// borrowed, so the printed breakdown keeps the AD's shorthand.
+//
+// WITHIN ONE DAY ONLY, deliberately. A weather cover carried across four days
+// materialised into each of them would be four days of crowd for one day's work
+// that may never happen (see crowd-merge.ts on weather cover), and the copied
+// rows would sit outside the document's own arithmetic. A pointer whose target
+// is not on the day is left exactly as it was.
+const CARRIED_TIERS = ["saChars", "featured", "spacts"] as const;
+
+function statesOwnCrowd(s: Scene): boolean {
+  return (s.sa || 0) > 0 || CARRIED_TIERS.some((f) => (s[f] || []).length > 0);
+}
+
+// "covered with Sc.23", "as scene 23", "as sc.23 above" → "23". A bare "(32)"
+// as in "As above (32)" is a HEAD COUNT, not a scene, and must not match.
+const CARRY_SCENE_RX = /\bs(?:c|cene)\b\.?\s*([0-9]+[a-z]?(?:\s*pt\s*[\d/]*[a-z]?)?)/i;
+
+function carrySourceNum(sc: Scene): string {
+  const explicit = (sc.contFrom || "").trim();
+  if (explicit) return explicit;
+  const m = CARRY_SCENE_RX.exec(sc.contFromRef || "");
+  return m ? m[1].replace(/\s+/g, "") : "";
+}
+
+const numKey = (n: string) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/^0+(?=\d)/, "");
+
+/** Resolve every whole-scene "from above" pointer into the rows it points at.
+ *  Returns how many scenes were filled in. */
+export function materialiseCarriedCrowd(days: ShootDay[]): number {
+  let filled = 0;
+  for (const d of days) {
+    for (let i = 0; i < d.scenes.length; i++) {
+      const sc = d.scenes[i];
+      if (statesOwnCrowd(sc)) continue;
+      if (!sc.contFrom && !sc.contFromRef) continue;
+      const want = numKey(carrySourceNum(sc));
+      // A numbered pointer must find THAT scene. An unnumbered "as above" means
+      // the scene above it, so walk back to the nearest one that states crowd.
+      const src = want
+        ? d.scenes.find((s, j) => j !== i && numKey(s.num) === want && statesOwnCrowd(s))
+        : d.scenes.slice(0, i).reverse().find(statesOwnCrowd);
+      if (!src) continue;
+      for (const f of CARRIED_TIERS) {
+        const rows = (src[f] || []).filter((r) => (r.count || 0) > 0);
+        if (!rows.length) continue;
+        sc[f] = rows.map((r) => ({
+          ...r,
+          flags: [...new Set([...(r.flags || []), "asAbove" as const])],
+          cont: r.cont || src.num,
+        }));
+      }
+      if ((src.sa || 0) > 0) {
+        sc.sa = src.sa;
+        sc.saAbove = true;
+      }
+      if (statesOwnCrowd(sc)) {
+        sc.crowdInherited = true;
+        filled++;
+      }
+    }
+  }
+  return filled;
 }
 
 export function allReqs(s: Scene): NamedCount[] {
