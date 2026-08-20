@@ -389,6 +389,24 @@ export interface CharacterRow {
   wrap?: string;
 }
 
+/**
+ * A supplementary fee budgeted at DAY level rather than against one character.
+ *
+ * A crowd AD budgeting "20 heads on a Cat D wet-work fee" does not care which
+ * named group they came from — they care that the day owes 20 × the fee. Rows
+ * here are additive and there can be as many as the day needs, so a day can
+ * carry several different fees at once (which one fee per character row could
+ * never express).
+ */
+export interface DayExtraFee {
+  /** what the fee is, for the breakdown — e.g. "Cat D — wet work" */
+  label: string;
+  /** per-head amount */
+  amt: number;
+  /** how many heads on the day are paid it */
+  count: number;
+}
+
 // Per-day crowd configuration (call/wrap etc.) — the prototype's CDAY entries.
 export interface CrowdDayConfig {
   shift: "Day" | "Night";
@@ -419,4 +437,8 @@ export interface CrowdDayConfig {
   // exactly as the user left it and `phSet` undefined; because auto-PH is
   // itself opt-in and default OFF, such a config still costs identically.
   phSet?: boolean;
+  // Day-level supplementary fees — see DayExtraFee. Absent / empty = none,
+  // which costs nothing, so every config saved before this existed is
+  // unchanged penny for penny.
+  extras?: DayExtraFee[];
 }

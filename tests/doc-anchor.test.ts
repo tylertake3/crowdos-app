@@ -6,7 +6,7 @@
 // "Scene # EXT POND Day 4/8" (page eighths) instead of "Shoot Day # 4".
 
 import { describe, it, expect } from "vitest";
-import { dayBannerIndex, isDayBanner } from "../lib/engine/doc-anchor";
+import { dayBannerIndex, findDateLine, isDayBanner } from "../lib/engine/doc-anchor";
 
 const L = (text: string) => ({ text });
 
@@ -77,5 +77,71 @@ describe("day banners in the original document", () => {
     expect(isDayBanner("Shoot Day # 4 Thursday, July 3, 2025", 4)).toBe(true);
     expect(isDayBanner("Shoot Day # 4 Thursday, July 3, 2025", 5)).toBe(false);
     expect(isDayBanner("End Day # 4 Thursday, July 3, 2025", 4)).toBe(false);
+  });
+});
+
+// A crowd breakdown is a ruled table: its day banner sits in the MIDDLE column
+// of the header row, so the banner never starts the line. These lines are real
+// text out of a crowd breakdown PDF.
+const TABLE_LINES = [
+  "Wednesday 9 September 2026 SHOOT DAY 3 HERTFORDSHIRE COUNTRY CLUB (0800-1830)",
+  "Sc.47 INT D4 WEDDING HOTEL SPA - POOL AREA 20 Spa Guests",
+  "Sc.53 INT D4 WEDDING HOTEL SPA - POOL AREA 3 Bride's Friends (Spa)",
+  "23 x SUPPORTING ARTISTS 0 xSPACTs (Special Action Extras) 0 x STUNTS",
+  "Thursday 10 September 2026 SHOOT DAY 4 HERTFORDSHIRE COUNTRY CLUB (0800-1830)",
+  "Sc.53 INT D4 WEDDING HOTEL SPA - POOL AREA 20 Spa Guests",
+  "Sc.45 INT D4 WEDDING HOTEL - SPA SAUNA The Boys are relaxing in the Sauna",
+  "Friday 11 September 2026 SHOOT DAY 5 LOCATION TBC (0800 - 1830)",
+  "Sc.43 INT D4 JAY'S DAD'S HOSPITAL ROOM - ICU 3 Hospital Nurses",
+].map(L);
+
+describe("ruled-table day headers (crowd breakdown)", () => {
+  const idx = dayBannerIndex(TABLE_LINES);
+
+  it("finds a banner sitting mid-line in a table header row", () => {
+    expect(idx.get(3)!.text).toContain("Wednesday 9 September 2026");
+    expect(idx.get(4)!.text).toContain("Thursday 10 September 2026");
+    expect(idx.get(5)!.text).toContain("Friday 11 September 2026");
+  });
+
+  it("still ignores a scene row's day/night marker", () => {
+    expect(isDayBanner("Sc.47 INT D4 WEDDING HOTEL SPA - POOL AREA 20 Spa Guests")).toBe(false);
+    expect(isDayBanner("Sc.53 INT D4 WEDDING HOTEL SPA - POOL AREA 3 Bride's Friends (Spa)")).toBe(
+      false
+    );
+  });
+});
+
+describe("falling back to the day's date", () => {
+  it("matches a header worded differently from the board's date", () => {
+    // the board holds "10 Sep 2026"; the document prints the long form
+    const line = findDateLine(TABLE_LINES, "10 Sep 2026");
+    expect(line!.text).toContain("Thursday 10 September 2026");
+  });
+
+  it("does not settle for a neighbouring day", () => {
+    const line = findDateLine(TABLE_LINES, "11 Sep 2026");
+    expect(line!.text).toContain("Friday 11 September 2026");
+  });
+
+  it("prefers the header row over a body row carrying the same date", () => {
+    const lines = [
+      L("Sc.12 EXT FIELD 10 September 2026 pick-up if weather turns"),
+      L("Thursday 10 September 2026 HERTFORDSHIRE COUNTRY CLUB"),
+    ];
+    expect(findDateLine(lines, "2026-09-10")!.text).toContain("Thursday");
+  });
+
+  it("returns nothing when the document never prints that date", () => {
+    expect(findDateLine(TABLE_LINES, "25 Dec 2026")).toBeNull();
+    expect(findDateLine(TABLE_LINES, "")).toBeNull();
+  });
+
+  it("never anchors a day to an 'End Day' line", () => {
+    const lines = [
+      L("End Day # 4 Thursday, July 3, 2025 -- Total Pages: 4 4/8"),
+      L("Shoot Day # 5 Friday, July 4, 2025"),
+    ];
+    expect(findDateLine(lines, "3 July 2025")).toBeNull();
   });
 });
